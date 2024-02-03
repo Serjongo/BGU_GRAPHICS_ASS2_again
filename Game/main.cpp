@@ -21,9 +21,11 @@ int main(int argc,char *argv[])
 
 	display.SetScene(scn);
 
+	scn->Draw(1, 0, scn->BACK, true, false);
+
 	while(!display.CloseWindow())
 	{
-		scn->Draw(1,0,scn->BACK,true,false);
+		
 		scn->Motion();
 		display.SwapBuffers();
 		display.PollEvents();	

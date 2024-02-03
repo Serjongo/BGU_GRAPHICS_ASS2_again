@@ -27,7 +27,8 @@ void Game::Init()
 	AddShader("../res/shaders/pickingShader");	
 	AddShader("../res/shaders/basicShader");
 	
-	AddTexture("../res/textures/box0.bmp",false);
+	//AddTexture("../res/textures/box0.bmp",false);
+	MakeTexture(800, 800);
 
 	AddShape(Plane,-1,TRIANGLES);
 	

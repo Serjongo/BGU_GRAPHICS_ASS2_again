@@ -26,6 +26,7 @@ public:
 	void AddShader(const std::string& fileName);
 	void AddTexture(const std::string& textureFileName, bool for2D);
 	void AddTexture(int width,int height, unsigned char *data);
+	void MakeTexture(int width, int height); //added by me
 
 	void AddCamera(glm::vec3& pos , float fov, float relationWH, float zNear, float zFar);
 

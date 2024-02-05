@@ -25,11 +25,22 @@ float distance(glm::vec3 origin, glm::vec3 destination)
     return sqrt(pow((destination.x - origin.x),2) + pow((destination.y - origin.y),2) + pow((destination.z - origin.z),2));
 }
 
+glm::vec3 calculate_hitpoint_from_distance(glm::vec3 origin,glm::vec3 direction, float dist) 
+{
+    float t_squared = pow(dist, 2) / glm::dot(direction, direction);
+    //we want to return the point with the positive of t, not the negative option
+    float t_res = sqrt(t_squared);
+    glm::vec3 vec_result = glm::vec3(origin.x + direction.x * t_res, origin.y + direction.y * t_res, origin.z + direction.z * t_res);
+    return vec_result;
+    
+}
+
 // my yee-yee ass shapes classes, it currently stays like this because I don't want to break it off into seperate files
 class Shape_custom
 {
     public:
-        virtual uint32_t intersection(glm::vec3 ray_origin, glm::vec3 ray_direction, uint32_t original_color) const = 0;
+        virtual float intersection(glm::vec3 ray_origin, glm::vec3 ray_direction, uint32_t original_color) const = 0;
+        virtual uint32_t getColor(glm::vec3 hitPoint) const = 0;
 };
 
 class Sphere : public Shape_custom
@@ -45,15 +56,15 @@ class Sphere : public Shape_custom
             this->color = color;
         }
         //getters
-        float get_radius()
+        float getRadius()
         {
             return this->radius;
         }
-        glm::vec3 get_center()
+        glm::vec3 getCenter()
         {
             return this->center;
         }
-        uint32_t get_color()
+        uint32_t getColor(glm::vec3 hitPoint) const
         {
             return this->color;
         }
@@ -76,7 +87,8 @@ class Sphere : public Shape_custom
 
 
 
-        uint32_t intersection(glm::vec3 ray_origin, glm::vec3 ray_direction, uint32_t original_color) const override
+        //do note, that I'm only calculating the shortest intersection distance now and returning it, I will likely change this once I start working with transparent spheres and such
+        float intersection(glm::vec3 ray_origin, glm::vec3 ray_direction, uint32_t original_color) const override 
         {
             // Calculate coefficients for the quadratic equation
             float a = glm::dot(ray_direction, ray_direction);
@@ -97,8 +109,40 @@ class Sphere : public Shape_custom
                 // Check if the intersection points are in front of the viewer
                 if (t1 >= 0 || t2 >= 0)
                 {
-                    // Return the sphere's color
-                    return this->color;
+                    //new --- we return the shorter result
+                    if (t1 >= 0 && t2 >= 0) 
+                    {
+                        if (t1 <= t2) 
+                        {
+                            glm::vec3 hitpoint = glm::vec3(ray_origin.x + ray_direction.x * t1, ray_origin.y + ray_direction.y * t1, ray_origin.z + ray_direction.z * t1);
+                            float distance_result = distance(ray_origin, hitpoint);
+                            return distance_result;
+                        }
+                        else 
+                        {
+                            glm::vec3 hitpoint = glm::vec3(ray_origin.x + ray_direction.x * t2, ray_origin.y + ray_direction.y * t2, ray_origin.z + ray_direction.z * t2);
+                            float distance_result = distance(ray_origin, hitpoint);
+                            return distance_result;
+                        }
+                    }
+                    else //meaning either t1 or t2 is negative
+                    {
+                        if (t1 >= 0) //if this one is positive, we deal with it, otherwise that leaves the 2nd one
+                        {
+                            glm::vec3 hitpoint = glm::vec3(ray_origin.x + ray_direction.x * t1, ray_origin.y + ray_direction.y * t1, ray_origin.z + ray_direction.z * t1);
+                            float distance_result = distance(ray_origin, hitpoint);
+                            return distance_result;
+                        }
+                        else 
+                        {
+                            glm::vec3 hitpoint = glm::vec3(ray_origin.x + ray_direction.x * t2, ray_origin.y + ray_direction.y * t2, ray_origin.z + ray_direction.z * t2);
+                            float distance_result = distance(ray_origin, hitpoint);
+                            return distance_result;
+                        }
+                    }
+
+                    //old--- Return the sphere's color
+                    //return this->color;
                 }
             }
             else if (discriminant == 0.0f)
@@ -106,16 +150,22 @@ class Sphere : public Shape_custom
                 // There is a single intersection point
                 float t = -b / (2.0f * a);
 
+
                 // Check if the intersection point is in front of the viewer
                 if (t >= 0)
                 {
-                    // Return the sphere's color
-                    return this->color;
+                    glm::vec3 hitpoint = glm::vec3(ray_origin.x + ray_direction.x * t, ray_origin.y + ray_direction.y * t, ray_origin.z + ray_direction.z * t);
+                    float distance_result = distance(ray_origin, hitpoint);
+                    return distance_result;
+
+                    // old--- Return the sphere's color
+                    //return this->color;
                 }
             }
-
-            // No intersection, return original color
-            return original_color;
+            else //discriminant is negative, no intersection
+            {
+                return -1; //negative distance, no intersection
+            }
         }
 
 
@@ -126,8 +176,32 @@ class Plane : public Shape_custom
     private:
         glm::vec4 plane_coord;
         uint32_t color;
+
+
+    public:
+        //constructors
+        Plane(glm::vec4 plane_coord, uint32_t color) 
+        {
+            this->plane_coord = plane_coord;
+            this->color = color;
+        }
+        Plane(glm::vec4 plane_coord) 
+        {
+            this->plane_coord = plane_coord;
+            this->color = 0xff000000; //fully opaque, and black.
+        }
+        //setters
+        void setColor(uint32_t color) 
+        {
+            this->color = color;
+        }
+        //getters
+        glm::vec4 getCoord()
+        {
+            return this->plane_coord;
+        }
         //------------FOR PLANE CHECKERBOARD COLOR PATTERN, COPIED FROM PS5 ------------------------
-        uint32_t getColor(glm::vec3 hitPoint, uint32_t original_color) const
+        uint32_t getColor(glm::vec3 hitPoint) const
         {
             // Checkerboard pattern
             float scale_parameter = 0.5f;
@@ -153,42 +227,15 @@ class Plane : public Shape_custom
             chessboard = (chessboard * 0.5) - int(chessboard * 0.5);
             chessboard *= 2;
             if (chessboard > 0.5) {
-                return 0.5f * original_color;
+                return 0.5f * this->color;
             }
-            return original_color;
+            return this->color;
 
         }
 
         //------------------------------------------------------------------------------------------
 
-    public:
-        //constructors
-        Plane(glm::vec4 plane_coord, uint32_t color) 
-        {
-            this->plane_coord = plane_coord;
-            this->color = color;
-        }
-        Plane(glm::vec4 plane_coord) 
-        {
-            this->plane_coord = plane_coord;
-            this->color = 0xff000000; //fully opaque, and black.
-        }
-        //setters
-        void set_color(uint32_t color) 
-        {
-            this->color = color;
-        }
-        //getters
-        glm::vec4 get_plane_coord()
-        {
-            return this->plane_coord;
-        }
-        uint32_t get_plane_color() 
-        {
-            return this->color;
-        }
-
-        uint32_t intersection(glm::vec3 ray_origin, glm::vec3 ray_direction, uint32_t original_color) const override
+        float intersection(glm::vec3 ray_origin, glm::vec3 ray_direction, uint32_t original_color) const override
         {
             //first we deal with the checkerboard pattern:
 
@@ -206,7 +253,7 @@ class Plane : public Shape_custom
                 if (nominator == 0)
                 {
                     //infinite results - we currently don't do anything with it, but we might later down the line, so for now we return same result as a single intersection
-                    return this->color;
+                    return 0; //this means we are inside the plane, so the distance is 0
                 }
                 else
                 {
@@ -218,25 +265,29 @@ class Plane : public Shape_custom
             {
                 float result = nominator / denominator; //we currently do nothing with it, but perhaps we might later down the line
                 glm::vec3 hitpoint = glm::vec3(ray_origin.x + ray_direction.x * result, ray_origin.y + ray_direction.y * result, ray_origin.z + ray_direction.z * result);
+                float distance_result = distance(ray_origin, hitpoint);
                 //uint32_t res_color = getColor(hitpoint, this->color);
                 if (result >= 0)
                 {
-                    return getColor(hitpoint, this->color);
+                    return distance_result;
+                    //return getColor(hitpoint, this->color);
                 }
                 else
                 {
-                    return original_color;
+                    return -1;//this means no intersection from our camera forwards
+                    //return original_color;
                 }
 
             }
 
-            return original_color;
+            return -1;
+            //return original_color;
         }
 
 };
 
 
-uint32_t PerPixel(glm::vec2 coord, std::vector<Shape_custom*> shapes_input) //essentially cherno's raytracing vid #3 as linked in the assignment
+uint32_t PerPixel(glm::vec2 coord, std::vector<Shape_custom*> shapes_input, std::vector<float> distances_input) //essentially cherno's raytracing vid #3 as linked in the assignment
 { 
     //TO_ADD INPUTS:
     //glm::vec3 eye_position
@@ -256,27 +307,51 @@ uint32_t PerPixel(glm::vec2 coord, std::vector<Shape_custom*> shapes_input) //es
     //myfile.open("getting coordinate edges.txt");
     //
 
-    if (coord.x == 0 && coord.y == 0) {
-        std::cout << "coord: " << coord.x << "," << coord.y << std::endl;
-        std::cout << "vec3: " << rayOrigin.x << "+ t * " << rayDirection.x << "," << rayOrigin.y << "+ t * " << rayDirection.y << "," << rayOrigin.z << "+ t * " << rayDirection.z << std::endl;
-    }
+    //if (coord.x == 0 && coord.y == 0) {
+    //    std::cout << "coord: " << coord.x << "," << coord.y << std::endl;
+    //    std::cout << "vec3: " << rayOrigin.x << "+ t * " << rayDirection.x << "," << rayOrigin.y << "+ t * " << rayDirection.y << "," << rayOrigin.z << "+ t * " << rayDirection.z << std::endl;
+    //}
 
-    if (coord.x >= 0.998 && coord.y == 0) {
-        std::cout << "coord: " << coord.x << "," << coord.y << std::endl;
-        std::cout << "vec3: " << rayOrigin.x << "+ t * " << rayDirection.x << "," << rayOrigin.y << "+ t * " << rayDirection.y << "," << rayOrigin.z << "+ t * " << rayDirection.z << std::endl;
-    }
-    if (coord.x >= 0.998 && coord.y == 0.998) {
-        std::cout << "coord: " << coord.x << "," << coord.y << std::endl;
-        std::cout << "vec3: " << rayOrigin.x << "+ t * " << rayDirection.x << "," << rayOrigin.y << "+ t * " << rayDirection.y << "," << rayOrigin.z << "+ t * " << rayDirection.z << std::endl;
-    }
+    //if (coord.x >= 0.998 && coord.y == 0) {
+    //    std::cout << "coord: " << coord.x << "," << coord.y << std::endl;
+    //    std::cout << "vec3: " << rayOrigin.x << "+ t * " << rayDirection.x << "," << rayOrigin.y << "+ t * " << rayDirection.y << "," << rayOrigin.z << "+ t * " << rayDirection.z << std::endl;
+    //}
+    //if (coord.x >= 0.998 && coord.y == 0.998) {
+    //    std::cout << "coord: " << coord.x << "," << coord.y << std::endl;
+    //    std::cout << "vec3: " << rayOrigin.x << "+ t * " << rayDirection.x << "," << rayOrigin.y << "+ t * " << rayDirection.y << "," << rayOrigin.z << "+ t * " << rayDirection.z << std::endl;
+    //}
     //Sphere* sphere_1 = new Sphere(radius, glm::vec3(-0.7, -0.7, -2), 0xffaa00ff);
     //Sphere* sphere_2 = new Sphere(radius, glm::vec3(0.6, -0.5, -1), 0xff00a0ff);
     //Plane* plane_1 = new Plane(glm::vec4(0, -0.5, -1.0, -3.5), 0xffaaaaff);
 
+    //int i; //counter for filling out distances
+    //shapes_input.size() > 0 ? i = shapes_input.size() - 1 : 
+
+    //filling out distances in the respective indeces of the shapes, in the "distances" vector
+    int i = shapes_input.size() - 1; //counter for filling out distances
     for (Shape_custom* shape : shapes_input)
     {
-        pixel_value = shape->intersection(rayOrigin, rayDirection, pixel_value);
+        //alright, let's talk logic.
+        //for each intersection, I return the distance to the object ()
+        distances_input[i] = shape->intersection(rayOrigin, rayDirection, pixel_value);
+        i--;
+
     }
+
+    //now we decide what color we bring back, let's take the smallest distance that is higher than 0, if one exists
+    float shortest_distance = INT_MAX; //arbitrary value, hopefully we don't reach those distances in reality
+    for (int i = 0; i < distances_input.size() && i < shapes_input.size(); i++) //distances and shapes ought to be synced, but I do this explicitly for readability
+    {
+        if (distances_input[i] >= 0 && distances_input[i] < shortest_distance) //meaning if we're farther than 0 and shorter than our current shortest distance. NOTE: if distances are the same, we will return the color of the object that was added to the stack first
+        {
+            shortest_distance = distances_input[i];
+            pixel_value = shapes_input[shapes_input.size() - 1 - i]->getColor(calculate_hitpoint_from_distance(rayOrigin, rayDirection, shortest_distance)); //the index reverse is because we work in stacks, but calculate chronologically. I might flip it over to sync them properly, but it works so eh, may change later
+        }
+    }
+    if (shortest_distance == INT_MAX) //meaning no intersections whatsoever
+    {
+        pixel_value = 0; //this doesn't do anything for now but eh
+    } 
 
     //pixel_value = plane_1->intersection(rayOrigin, rayDirection, pixel_value);
     //pixel_value = sphere_1->intersection(rayOrigin, rayDirection, pixel_value);
@@ -286,6 +361,11 @@ uint32_t PerPixel(glm::vec2 coord, std::vector<Shape_custom*> shapes_input) //es
     //pixel_value = sphere_intersection(rayOrigin, rayDirection, glm::vec3(-0.7, -0.7, -2), radius, 0xffaa00ff, pixel_value);
     //pixel_value = sphere_intersection(rayOrigin, rayDirection, glm::vec3(0.6, -0.5, -1), radius, 0xff00a0ff, pixel_value);
     
+    //before we end this loop, we ought to pop the distances back out
+    for (float dist : distances_input) 
+    {
+        distances_input.pop_back();
+    }
     
     //TODO: calculate intersection over all of the shapes, return the color of the intersection that is closest to your eye
 
@@ -295,12 +375,18 @@ uint32_t PerPixel(glm::vec2 coord, std::vector<Shape_custom*> shapes_input) //es
 Texture::Texture(int width, int height) //added by me
 {
     std::vector<Shape_custom*> shapes;
+    std::vector<float> distances; //this will include distance for each hit, -1 if non-existent
     Sphere* sphere_1 = new Sphere(0.5, glm::vec3(-0.7, -0.7, -2), 0xffaa00ff);
     Sphere* sphere_2 = new Sphere(0.5, glm::vec3(0.6, -0.5, -1), 0xff00a0ff);
     Plane* plane_1 = new Plane(glm::vec4(0, -0.5, -1.0, -3.5), 0xffaaaaff);
-    shapes.push_back(plane_1);
+    
     shapes.push_back(sphere_1);
     shapes.push_back(sphere_2);
+    shapes.push_back(plane_1);
+    for (int i = 0; i < shapes.size(); i++) 
+    {
+        distances.push_back(-1); //temporary distance
+    }
     
 
     uint32_t* image_data = new uint32_t[width * height]; //right-to-left -> 2bytes(R) -> 2bytes(G) -> 2bytes(B) -> 2bytes(alpha) -> 0x meaning we write in hexadecimal
@@ -317,7 +403,7 @@ Texture::Texture(int width, int height) //added by me
                 (float)x / (float)width , 1.0f - (float)y / (float)height  //do note that I have inverted the y axis
             };
             coord = coord * 2.0f - 1.0f; //normalizing the coordinates from -1 to 1
-            image_data[x + y * width] = PerPixel(coord,shapes);  
+            image_data[x + y * width] = PerPixel(coord,shapes,distances);  
         }
     }
 
@@ -332,6 +418,20 @@ Texture::Texture(int width, int height) //added by me
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image_data);
 }
+
+
+//IRRELEVANT CODE FROM THIS POINT
+
+
+
+
+
+
+
+
+
+
+
 
 Texture::Texture(const std::string& fileName)
 {

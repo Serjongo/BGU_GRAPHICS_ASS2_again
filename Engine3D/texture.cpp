@@ -19,6 +19,20 @@
 //}
 
 
+//for input from files
+
+uint32_t convert_vec4_rgba_to_uint32_t(glm::vec4 color) 
+{
+    unsigned char r = color.x * 255;
+    unsigned char g = color.y * 255;
+    unsigned char b = color.z * 255;
+    unsigned char alpha = color.w * 255;
+    return r | g << 8 | b << 16 | alpha << 24;
+}
+
+
+
+//algebraic functions for vectors
 
 float distance(glm::vec3 origin, glm::vec3 destination) 
 {
@@ -34,6 +48,14 @@ glm::vec3 calculate_hitpoint_from_distance(glm::vec3 origin,glm::vec3 direction,
     return vec_result;
     
 }
+
+glm::vec3 calculate_vector_direction(glm::vec3 origin, glm::vec3 destination) 
+{
+    return destination - origin;
+}
+
+
+
 
 // my yee-yee ass shapes classes, it currently stays like this because I don't want to break it off into seperate files
 class Shape_custom
@@ -286,8 +308,137 @@ class Plane : public Shape_custom
 
 };
 
+//will likely need to add: RayOrigin
+uint32_t lightTest(glm::vec2 coord,std::vector<Shape_custom*>, std::vector<glm::vec4> light_sources, uint32_t* image_data_input) // temporary, may change. Have to implement directional,ambient,and spot light
+{
+    return 0;
+}
+uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_t* image_data_input, glm::vec3 eye, glm::vec3 direction, std::vector<float> &distances_input, std::vector<Shape_custom*> &shapes_input, uint32_t pixel_color,std::vector<glm::vec4> &spotlight_positions)
+{
+    //calculate the shortest distance from the eye, this is how we find a hitpoint, from which we calculate a ray to a light source
 
-uint32_t PerPixel(glm::vec2 coord, std::vector<Shape_custom*> shapes_input, std::vector<float> distances_input) //essentially cherno's raytracing vid #3 as linked in the assignment
+    float shortest_distance = INT_MAX;
+    int relevant_shape_index;
+    int spotlight_counter = 0; //only used for spotlight since I have to sync light_sources_directions and spotlight_positions. That's the cost of winging it and not doing classes.
+    for (int i = 0; i < distances_input.size() && i < shapes_input.size(); i++) //distances and shapes ought to be synced, but I do this explicitly for readability
+    {
+        if (distances_input[i] >= 0 && distances_input[i] < shortest_distance) //meaning if we're farther than 0 and shorter than our current shortest distance. NOTE: if distances are the same, we will return the color of the object that was added to the stack first
+        {
+            shortest_distance = distances_input[i];
+            relevant_shape_index = i; // we save this so we won't look for intersections with ourselves
+            //pixel_value = shapes_input[shapes_input.size() - 1 - i]->getColor(calculate_hitpoint_from_distance(rayOrigin, rayDirection, shortest_distance)); //the index reverse is because we work in stacks, but calculate chronologically. I might flip it over to sync them properly, but it works so eh, may change later
+        }
+    }
+    //we now check collision with other shapes on our way to the lighting
+    char in_shade = 1; //I'm in shade until proven not to be. This is important because we potentially may be under shade with one source of light, but another light may still shine at us.
+    for (glm::vec4 light : light_sources_directions) //I may only filter specific light source types, MAY CHANGE.
+    {
+        //check light_type
+        if (light.w == 0.0) //directional light
+        {
+            glm::vec3 light_ray = glm::vec3(light.x, light.y, light.z);
+            glm::vec3 hitpoint = calculate_hitpoint_from_distance(eye, direction, shortest_distance);
+            for (int i = 0, potential_intersections = shapes_input.size() - 1; i < shapes_input.size(); i++) //originally a for each loop, moved from it to accommodate for filtering out an indexed shape 
+            {
+                if (i != relevant_shape_index) //don't check intersection with myself. ADDITIONALLY: the i of the distances may be in inverse to the shapes vector, may have to switch them around. 
+                {
+                    float distance_to_intersection = shapes_input[i]->intersection(hitpoint, -light_ray, pixel_color); //notice that light ray is reversed, otherwise i get a negative direction in intersection and dont return it
+                    if (distance_to_intersection < 0)
+                    {
+                        potential_intersections--;
+                        if (potential_intersections == 0)
+                        {
+                            in_shade = 0;
+                        }
+                    }
+
+                }
+            }
+        }
+        else if (light.w == 1.0) //spotlight - added vector normalization
+        {
+            glm::vec3 light_ray = glm::normalize(glm::vec3(light.x, light.y, light.z));
+            glm::vec3 hitpoint = calculate_hitpoint_from_distance(eye, direction, shortest_distance);
+            glm::vec3 spotlight_pos = glm::vec3(spotlight_positions[spotlight_counter].x, spotlight_positions[spotlight_counter].y, spotlight_positions[spotlight_counter].z);
+            glm::vec3 light_to_surface_vec = glm::normalize(calculate_vector_direction(spotlight_pos, hitpoint));
+
+            //unused
+            float angle_radians = std::acos(glm::dot(light_to_surface_vec, light_ray)/(glm::length(light_to_surface_vec)*glm::length(light_ray)));
+            float angle_degrees = angle_radians * (180.0 / 3.14159);
+            //I dunno, I think it makes sense
+            //if (angle_degrees < 0)
+            //{
+            //    angle_degrees = 180 + angle_degrees;
+            //}
+            //
+
+            //DO NOTE: THIS DOES NOT MAKE SENSE IN ITS CURRENT CURRENT FORM, THE COMPARISON SHOULD GO THE OTHER WAY, OUR COS(a) SHOULD BE SMALLER THAN THE CUTOFF ANGLE, FOR SOME REASON IT PRODUCES THE INVERSE OF THE RESULTS, THIS DOES NOT MAKE ANY SENSE.
+            if (glm::dot(light_to_surface_vec, light_ray) / (glm::length(light_to_surface_vec) * glm::length(light_ray)) > spotlight_positions[spotlight_counter].w) //if our angle is smaller than the cutoff angle, light could theoretically reach us
+            {
+
+                for (int i = 0, potential_intersections = shapes_input.size() - 1; i < shapes_input.size(); i++) //originally a for each loop, moved from it to accommodate for filtering out an indexed shape 
+                {
+                    if (i != relevant_shape_index) //don't check intersection with myself. ADDITIONALLY: the i of the distances may be in inverse to the shapes vector, may have to switch them around. 
+                    {
+                        float distance_to_intersection = shapes_input[i]->intersection(hitpoint, calculate_vector_direction(hitpoint, spotlight_pos), pixel_color);
+                        if (distance_to_intersection < 0)
+                        {
+                            potential_intersections--;
+                            if (potential_intersections == 0)
+                            {
+                                in_shade = 0;
+                            }
+                        }
+
+                    }
+                }
+            }
+            else 
+            {
+                in_shade = 1;
+            }
+
+            spotlight_counter++; //if we encounter another spotlight, we'll start from that one
+        }
+
+        else //point light, I dunno why, I made it already so might as well lol. do note that it has no attenuation
+        {
+            glm::vec3 light_point = glm::vec3(light.x, light.y, light.z);
+            glm::vec3 hitpoint = calculate_hitpoint_from_distance(eye, direction, shortest_distance);
+            for (int i = 0, potential_intersections = shapes_input.size() - 1; i < shapes_input.size(); i++) //originally a for each loop, moved from it to accommodate for filtering out an indexed shape 
+            {
+                if (i != relevant_shape_index) //don't check intersection with myself. ADDITIONALLY: the i of the distances may be in inverse to the shapes vector, may have to switch them around. 
+                {
+                    float distance_to_intersection = shapes_input[i]->intersection(hitpoint, calculate_vector_direction(hitpoint, light_point), pixel_color);
+                    if (distance_to_intersection < 0)
+                    {
+                        potential_intersections--;
+                        if (potential_intersections == 0)
+                        {
+                            in_shade = 0;
+                        }
+                    }
+
+                }
+            }
+        }
+
+        if (in_shade == 1)
+        {
+            pixel_color = pixel_color * 0.25;
+        }
+
+    }
+
+    //if (in_shade == 1) 
+    //{
+    //    pixel_color = pixel_color * 0.25;
+    //}
+    return pixel_color;
+}
+
+
+uint32_t PerPixel(glm::vec2 coord, glm::vec3 rayDirection, std::vector<Shape_custom*> shapes_input, std::vector<float> &distances,glm::vec3 rayOrigin) //essentially cherno's raytracing vid #3 as linked in the assignment
 { 
     //TO_ADD INPUTS:
     //glm::vec3 eye_position
@@ -298,8 +449,8 @@ uint32_t PerPixel(glm::vec2 coord, std::vector<Shape_custom*> shapes_input, std:
     // a+bt - ray formula. a = ray origin, b = ray direction , t = hit distance
 
     //------------TEMPORARY VALUES, WILL LIKELY CHANGE------------------
-    glm::vec3 rayOrigin(0.0f,0.0f,4.0f); //note that moving forward in the z direction is actually backwards in relation to the ray we shoot, since it shoots in the negative direction
-    glm::vec3 rayDirection(coord.x, coord.y, -4.0f); // currently Z is hardcoded, will change
+    
+    //glm::vec3 rayDirection(coord.x, coord.y, -rayOrigin.z);
     float radius = 0.5f;
     uint32_t pixel_value = 0; // this will change as it goes through more processes
     //FOR DEBUGGING
@@ -328,24 +479,24 @@ uint32_t PerPixel(glm::vec2 coord, std::vector<Shape_custom*> shapes_input, std:
     //shapes_input.size() > 0 ? i = shapes_input.size() - 1 : 
 
     //filling out distances in the respective indeces of the shapes, in the "distances" vector
-    int i = shapes_input.size() - 1; //counter for filling out distances
+    //int i = shapes_input.size() - 1; //counter for filling out distances
     for (Shape_custom* shape : shapes_input)
     {
         //alright, let's talk logic.
         //for each intersection, I return the distance to the object ()
-        distances_input[i] = shape->intersection(rayOrigin, rayDirection, pixel_value);
-        i--;
+        distances.push_back(shape->intersection(rayOrigin, rayDirection, pixel_value));
+        //i--;
 
     }
 
     //now we decide what color we bring back, let's take the smallest distance that is higher than 0, if one exists
     float shortest_distance = INT_MAX; //arbitrary value, hopefully we don't reach those distances in reality
-    for (int i = 0; i < distances_input.size() && i < shapes_input.size(); i++) //distances and shapes ought to be synced, but I do this explicitly for readability
+    for (int i = 0; i < distances.size() && i < shapes_input.size(); i++) //distances and shapes ought to be synced, but I do this explicitly for readability
     {
-        if (distances_input[i] >= 0 && distances_input[i] < shortest_distance) //meaning if we're farther than 0 and shorter than our current shortest distance. NOTE: if distances are the same, we will return the color of the object that was added to the stack first
+        if (distances[i] >= 0 && distances[i] < shortest_distance) //meaning if we're farther than 0 and shorter than our current shortest distance. NOTE: if distances are the same, we will return the color of the object that was added to the stack first
         {
-            shortest_distance = distances_input[i];
-            pixel_value = shapes_input[shapes_input.size() - 1 - i]->getColor(calculate_hitpoint_from_distance(rayOrigin, rayDirection, shortest_distance)); //the index reverse is because we work in stacks, but calculate chronologically. I might flip it over to sync them properly, but it works so eh, may change later
+            shortest_distance = distances[i];
+            pixel_value = shapes_input[i]->getColor(calculate_hitpoint_from_distance(rayOrigin, rayDirection, shortest_distance)); //the index reverse is because we work in stacks, but calculate chronologically. I might flip it over to sync them properly, but it works so eh, may change later
         }
     }
     if (shortest_distance == INT_MAX) //meaning no intersections whatsoever
@@ -360,12 +511,15 @@ uint32_t PerPixel(glm::vec2 coord, std::vector<Shape_custom*> shapes_input, std:
     //pixel_value = plane_intersection(rayOrigin, rayDirection, glm::vec4(0, -0.5, -1.0, -3.5), 0xffaaaaff, pixel_value);
     //pixel_value = sphere_intersection(rayOrigin, rayDirection, glm::vec3(-0.7, -0.7, -2), radius, 0xffaa00ff, pixel_value);
     //pixel_value = sphere_intersection(rayOrigin, rayDirection, glm::vec3(0.6, -0.5, -1), radius, 0xff00a0ff, pixel_value);
-    
-    //before we end this loop, we ought to pop the distances back out
-    for (float dist : distances_input) 
-    {
-        distances_input.pop_back();
-    }
+
+
+
+
+    //for (float dist : distances_input)
+    //{
+    //    distances_input.pop_back();
+    //}
+
     
     //TODO: calculate intersection over all of the shapes, return the color of the intersection that is closest to your eye
 
@@ -376,17 +530,36 @@ Texture::Texture(int width, int height) //added by me
 {
     std::vector<Shape_custom*> shapes;
     std::vector<float> distances; //this will include distance for each hit, -1 if non-existent
+    uint32_t sphere_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4( 0.6,0.0,0.8,10.0));
+    uint32_t sphere_2_color = convert_vec4_rgba_to_uint32_t(glm::vec4(1, 0, 0, 10.0));
+    uint32_t plane_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.0, 1.0, 1.0, 10.0));
+
     Sphere* sphere_1 = new Sphere(0.5, glm::vec3(-0.7, -0.7, -2), 0xffaa00ff);
     Sphere* sphere_2 = new Sphere(0.5, glm::vec3(0.6, -0.5, -1), 0xff00a0ff);
     Plane* plane_1 = new Plane(glm::vec4(0, -0.5, -1.0, -3.5), 0xffaaaaff);
-    
+    glm::vec3 rayOrigin_original(0.0f, 0.0f, 4.0f); //note that moving forward in the z direction is actually backwards in relation to the ray we shoot, since it shoots in the negative direction
+    std::vector<glm::vec4> light_sources_original;
+    std::vector<glm::vec4> spotlight_positions;
+    glm::vec3 rayDirection_original; //from eye to screen
+
+    //light_sources_original.push_back(glm::vec4(0.5, 0.0, -1.0, 1.0)); //spot light
+    //light_sources_original.push_back(glm::vec4(-0.7, -0.7, -2.0, 1.0)); //spot light
+    //light_sources_original.push_back(glm::vec4(0.5,0.0,-1.0,1.0)); //spot light
+
+    light_sources_original.push_back(glm::vec4(0.0, 0.5, -1.0, 0.0)); //directional light
+
+    spotlight_positions.push_back(glm::vec4(2.0,1.0,3.0,0.6)); //do note that the 4th parameter is probably the cutoff angle: 0.6 * 255deg
+
     shapes.push_back(sphere_1);
     shapes.push_back(sphere_2);
     shapes.push_back(plane_1);
-    for (int i = 0; i < shapes.size(); i++) 
-    {
-        distances.push_back(-1); //temporary distance
-    }
+
+
+    //for (int i = 0; i < shapes.size(); i++) 
+    //{
+    //    distances.push_back(-1); //temporary distance
+    //}
+
     
 
     uint32_t* image_data = new uint32_t[width * height]; //right-to-left -> 2bytes(R) -> 2bytes(G) -> 2bytes(B) -> 2bytes(alpha) -> 0x meaning we write in hexadecimal
@@ -403,7 +576,17 @@ Texture::Texture(int width, int height) //added by me
                 (float)x / (float)width , 1.0f - (float)y / (float)height  //do note that I have inverted the y axis
             };
             coord = coord * 2.0f - 1.0f; //normalizing the coordinates from -1 to 1
-            image_data[x + y * width] = PerPixel(coord,shapes,distances);  
+            rayDirection_original = glm::vec3(coord.x, coord.y, -rayOrigin_original.z);
+            image_data[x + y * width] = PerPixel(coord,rayDirection_original,shapes,distances, rayOrigin_original);
+
+            image_data[x + y * width] = PerPixelShadow(light_sources_original, image_data, rayOrigin_original, rayDirection_original, distances,shapes ,image_data[x + y * width],spotlight_positions);
+            //before we end this loop, we ought to pop the distances back out
+            for (float dist : distances)
+            {
+                distances.pop_back();
+            }
+
+
         }
     }
 
@@ -418,6 +601,21 @@ Texture::Texture(int width, int height) //added by me
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image_data);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 //IRRELEVANT CODE FROM THIS POINT

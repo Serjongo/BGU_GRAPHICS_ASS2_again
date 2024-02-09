@@ -316,7 +316,7 @@ uint32_t lightTest(glm::vec2 coord,std::vector<Shape_custom*>, std::vector<glm::
 uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_t* image_data_input, glm::vec3 eye, glm::vec3 direction, std::vector<float> &distances_input, std::vector<Shape_custom*> &shapes_input, uint32_t pixel_color,std::vector<glm::vec4> &spotlight_positions)
 {
     //calculate the shortest distance from the eye, this is how we find a hitpoint, from which we calculate a ray to a light source
-
+    uint32_t og_color = pixel_color;
     float shortest_distance = INT_MAX;
     int relevant_shape_index;
     int spotlight_counter = 0; //only used for spotlight since I have to sync light_sources_directions and spotlight_positions. That's the cost of winging it and not doing classes.
@@ -330,9 +330,10 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
         }
     }
     //we now check collision with other shapes on our way to the lighting
-    char in_shade = 1; //I'm in shade until proven not to be. This is important because we potentially may be under shade with one source of light, but another light may still shine at us.
     for (glm::vec4 light : light_sources_directions) //I may only filter specific light source types, MAY CHANGE.
     {
+        char in_shade = 1; //I'm in shade until proven not to be. This is important because we potentially may be under shade with one source of light, but another light may still shine at us.
+
         //check light_type
         if (light.w == 0.0) //directional light
         {
@@ -349,10 +350,18 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
                         if (potential_intersections == 0)
                         {
                             in_shade = 0;
+                            //pixel_color = 0;
                         }
                     }
 
                 }
+            }
+
+            if (in_shade == 1)
+            {
+                pixel_color = pixel_color * 0.25;
+                //std::cout << "directional coliision\n";
+
             }
         }
         else if (light.w == 1.0) //spotlight - added vector normalization
@@ -392,41 +401,53 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
 
                     }
                 }
+                if (in_shade == 1)
+                {
+                    //pixel_color = pixel_color * 0.25;
+                    pixel_color = pixel_color * 0.25;
+
+                    //std::cout << "spotlight collision\n";
+
+                }
             }
             else 
             {
                 in_shade = 1;
+                pixel_color = pixel_color * 0.25;
+                //std::cout << "spotlight out of cutoff\n";
+
             }
 
             spotlight_counter++; //if we encounter another spotlight, we'll start from that one
         }
 
-        else //point light, I dunno why, I made it already so might as well lol. do note that it has no attenuation
-        {
-            glm::vec3 light_point = glm::vec3(light.x, light.y, light.z);
-            glm::vec3 hitpoint = calculate_hitpoint_from_distance(eye, direction, shortest_distance);
-            for (int i = 0, potential_intersections = shapes_input.size() - 1; i < shapes_input.size(); i++) //originally a for each loop, moved from it to accommodate for filtering out an indexed shape 
-            {
-                if (i != relevant_shape_index) //don't check intersection with myself. ADDITIONALLY: the i of the distances may be in inverse to the shapes vector, may have to switch them around. 
-                {
-                    float distance_to_intersection = shapes_input[i]->intersection(hitpoint, calculate_vector_direction(hitpoint, light_point), pixel_color);
-                    if (distance_to_intersection < 0)
-                    {
-                        potential_intersections--;
-                        if (potential_intersections == 0)
-                        {
-                            in_shade = 0;
-                        }
-                    }
+        //else //point light, I dunno why, I made it already so might as well lol. do note that it has no attenuation
+        //{
+        //    glm::vec3 light_point = glm::vec3(light.x, light.y, light.z);
+        //    glm::vec3 hitpoint = calculate_hitpoint_from_distance(eye, direction, shortest_distance);
+        //    for (int i = 0, potential_intersections = shapes_input.size() - 1; i < shapes_input.size(); i++) //originally a for each loop, moved from it to accommodate for filtering out an indexed shape 
+        //    {
+        //        if (i != relevant_shape_index) //don't check intersection with myself. ADDITIONALLY: the i of the distances may be in inverse to the shapes vector, may have to switch them around. 
+        //        {
+        //            float distance_to_intersection = shapes_input[i]->intersection(hitpoint, calculate_vector_direction(hitpoint, light_point), pixel_color);
+        //            if (distance_to_intersection < 0)
+        //            {
+        //                potential_intersections--;
+        //                if (potential_intersections == 0)
+        //                {
+        //                    in_shade = 0;
+        //                }
+        //            }
 
-                }
-            }
-        }
+        //        }
+        //    }
+        //    if (in_shade == 1)
+        //    {
+        //        pixel_color = pixel_color * 0.25;
+        //    }
+        //}
 
-        if (in_shade == 1)
-        {
-            pixel_color = pixel_color * 0.25;
-        }
+
 
     }
 
@@ -434,6 +455,7 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
     //{
     //    pixel_color = pixel_color * 0.25;
     //}
+    //std::cout << "done\n";
     return pixel_color;
 }
 
@@ -542,7 +564,7 @@ Texture::Texture(int width, int height) //added by me
     std::vector<glm::vec4> spotlight_positions;
     glm::vec3 rayDirection_original; //from eye to screen
 
-    //light_sources_original.push_back(glm::vec4(0.5, 0.0, -1.0, 1.0)); //spot light
+    light_sources_original.push_back(glm::vec4(0.5, 0.0, -1.0, 1.0)); //spot light
     //light_sources_original.push_back(glm::vec4(-0.7, -0.7, -2.0, 1.0)); //spot light
     //light_sources_original.push_back(glm::vec4(0.5,0.0,-1.0,1.0)); //spot light
 

@@ -26,7 +26,7 @@ uint32_t convert_vec4_rgba_to_uint32_t(glm::vec4 color)
     unsigned char r = color.x * 255;
     unsigned char g = color.y * 255;
     unsigned char b = color.z * 255;
-    unsigned char alpha = color.w * 255;
+    unsigned char alpha = color.w / 10 * 255;
     return r | g << 8 | b << 16 | alpha << 24;
 }
 
@@ -63,6 +63,7 @@ class Shape_custom
     public:
         virtual float intersection(glm::vec3 ray_origin, glm::vec3 ray_direction, uint32_t original_color) const = 0;
         virtual uint32_t getColor(glm::vec3 hitPoint) const = 0;
+        //virtual glm::vec3 calculate_normal(glm::vec3 hitpoint) const = 0;
 };
 
 class Sphere : public Shape_custom
@@ -107,6 +108,10 @@ class Sphere : public Shape_custom
         }
 
 
+        glm::vec3 calculate_normal(glm::vec3 hitpoint) //this returns a direction vector which points outside of the sphere
+        {
+            return hitpoint - this->center;
+        }
 
 
         //do note, that I'm only calculating the shortest intersection distance now and returning it, I will likely change this once I start working with transparent spheres and such
@@ -257,6 +262,13 @@ class Plane : public Shape_custom
 
         //------------------------------------------------------------------------------------------
 
+        glm::vec3 calculate_normal(glm::vec3 hitpoint) //we don't do much here, the definition of a plane contains the normal
+        {
+            glm::vec3 result = glm::vec3(this->getCoord().x, this->getCoord().y, this->getCoord().z);
+            return result;
+        }
+
+
         float intersection(glm::vec3 ray_origin, glm::vec3 ray_direction, uint32_t original_color) const override
         {
             //first we deal with the checkerboard pattern:
@@ -359,7 +371,7 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
 
             if (in_shade == 1)
             {
-                pixel_color = pixel_color * 0.25;
+                pixel_color = pixel_color * 0.5;
                 //std::cout << "directional coliision\n";
 
             }
@@ -404,7 +416,7 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
                 if (in_shade == 1)
                 {
                     //pixel_color = pixel_color * 0.25;
-                    pixel_color = pixel_color * 0.25;
+                    pixel_color = pixel_color * 0.5;
 
                     //std::cout << "spotlight collision\n";
 
@@ -413,7 +425,7 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
             else 
             {
                 in_shade = 1;
-                pixel_color = pixel_color * 0.25;
+                pixel_color = pixel_color * 0.5;
                 //std::cout << "spotlight out of cutoff\n";
 
             }
@@ -552,13 +564,13 @@ Texture::Texture(int width, int height) //added by me
 {
     std::vector<Shape_custom*> shapes;
     std::vector<float> distances; //this will include distance for each hit, -1 if non-existent
-    uint32_t sphere_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4( 0.6,0.0,0.8,10.0));
-    uint32_t sphere_2_color = convert_vec4_rgba_to_uint32_t(glm::vec4(1, 0, 0, 10.0));
+    uint32_t sphere_2_color = convert_vec4_rgba_to_uint32_t(glm::vec4( 0.6,0.0,0.8,10.0));
+    uint32_t sphere_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(1, 0, 0, 10.0));
     uint32_t plane_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.0, 1.0, 1.0, 10.0));
 
-    Sphere* sphere_1 = new Sphere(0.5, glm::vec3(-0.7, -0.7, -2), 0xffaa00ff);
-    Sphere* sphere_2 = new Sphere(0.5, glm::vec3(0.6, -0.5, -1), 0xff00a0ff);
-    Plane* plane_1 = new Plane(glm::vec4(0, -0.5, -1.0, -3.5), 0xffaaaaff);
+    Sphere* sphere_1 = new Sphere(0.5, glm::vec3(-0.7, -0.7, -2), sphere_1_color);
+    Sphere* sphere_2 = new Sphere(0.5, glm::vec3(0.6, -0.5, -1), sphere_2_color);
+    Plane* plane_1 = new Plane(glm::vec4(0, -0.5, -1.0, -3.5), plane_1_color);
     glm::vec3 rayOrigin_original(0.0f, 0.0f, 4.0f); //note that moving forward in the z direction is actually backwards in relation to the ray we shoot, since it shoots in the negative direction
     std::vector<glm::vec4> light_sources_original;
     std::vector<glm::vec4> spotlight_positions;
@@ -600,7 +612,7 @@ Texture::Texture(int width, int height) //added by me
             coord = coord * 2.0f - 1.0f; //normalizing the coordinates from -1 to 1
             rayDirection_original = glm::vec3(coord.x, coord.y, -rayOrigin_original.z);
             image_data[x + y * width] = PerPixel(coord,rayDirection_original,shapes,distances, rayOrigin_original);
-
+            image_data[x + y * width] = (image_data[x + y * width])* 0.8; //ambient lighting coefficient
             image_data[x + y * width] = PerPixelShadow(light_sources_original, image_data, rayOrigin_original, rayDirection_original, distances,shapes ,image_data[x + y * width],spotlight_positions);
             //before we end this loop, we ought to pop the distances back out
             for (float dist : distances)

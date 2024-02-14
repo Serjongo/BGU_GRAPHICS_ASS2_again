@@ -21,28 +21,19 @@
 
 //for input from files
 
-uint32_t convert_vec4_rgba_to_uint32_t(glm::vec4 color,int objects, int io) 
+uint32_t convert_vec4_rgba_to_uint32_t(glm::vec4 color, int input_as_decimal) //this returns a proper rgba pixel
 {
 
-    if (io == 0) // meaning input, we parse from file and get these stupid vals of 0.0-1.0 
+    if (input_as_decimal == 1) // meaning we get input as 0-1.0
     {
         unsigned char r = color.x * 255;
         unsigned char g = color.y * 255;
         unsigned char b = color.z * 255;
-        if (objects == 1) //meaning we deal with objects, which for some reason have an alpha of 10.0 instead of 1.0
-        {
-            unsigned char alpha = color.w / 10 * 255;
-            uint32_t final_result = r | g << 8 | b << 16 | alpha << 24;
-            return final_result;
-        }
-        else //DECLARE IT 0. Meaning we deal with light colors, which have a regular alpha of 1.0
-        {
-            unsigned char alpha = color.w * 255;
-            uint32_t final_result = r | g << 8 | b << 16 | alpha << 24;
-            return final_result;
-        }
+        unsigned char alpha = 255;
+        uint32_t final_result = r | g << 8 | b << 16 | alpha << 24;
+        return final_result;
     }
-    else // DECLARE IT 1. meaning output, we deal with our own internal values which range from 0-255, don't care about type here
+    else // DECLARE IT 0. meaning meaning we get input as actual color values 0-255
     {
         unsigned char r = color.x;
         unsigned char g = color.y;
@@ -53,16 +44,16 @@ uint32_t convert_vec4_rgba_to_uint32_t(glm::vec4 color,int objects, int io)
     }
 }
 
-glm::vec4 convert_uint32_t_to_vec4_rgba(uint32_t color, int percentage) // 1 means return percentage of 255 (0.0-1.0), everything else means 0-255
+glm::vec4 convert_uint32_t_to_vec4_rgba(uint32_t color, int output_as_decimal) // 1 means return decimal percentage of 255 (0.0-1.0), everything else means 0-255
 {
     uint32_t temp_color = color;
     unsigned char r = (unsigned char)color & 0x000000ff;
     unsigned char g = (unsigned char)((color & 0x0000ff00) >> 8);
     unsigned char b = (unsigned char)((color & 0x00ff0000) >> 16);
     unsigned char alpha = (unsigned char)((color & 0xff000000) >> 24);
-    if (percentage == 1) {
+    if (output_as_decimal == 1) {
 
-        glm::vec4 final_result = glm::vec4(r /255, g / 255, b / 255, alpha / 255);
+        glm::vec4 final_result = glm::vec4((float)(r) /255,(float)(g) / 255, (float)(b) / 255, (float)(alpha) / 255);
         return final_result; //this will give us an example vector of (0.3,0.6,0.8,1.0)
     }
     else 
@@ -74,13 +65,13 @@ glm::vec4 convert_uint32_t_to_vec4_rgba(uint32_t color, int percentage) // 1 mea
 
 glm::vec4 multiply_vector_by_vec_scalars(glm::vec4 input, glm::vec4 scalars) //input vec4 0-255 vals, scalars vec4 0.0-1.0 vals
 {
-    return glm::vec4(input.r * scalars.r, input.g * scalars.g, input.b * scalars.b, input.a * scalars.a);
+    return glm::vec4(input.r * (float)(scalars.r), input.g * (float)(scalars.g), input.b * (float)(scalars.b), input.a * (float)(scalars.a));
 }
 
 //for multiplying our rgba value by a decimal without fudging up our channels
-uint32_t rgba_uint32_t_scalar_multiplication(uint32_t original_color, float decimal_percentage) //decimal percentage must be between 0-1, I'm not checking for correctness because this is for internal use only
+uint32_t rgba_uint32_t_scalar_multiplication(uint32_t original_color, float decimal_percentage_scalar) //decimal percentage must be between 0-1, I'm not checking for correctness because this is for internal use only
 {
-    return convert_vec4_rgba_to_uint32_t(multiply_vector_by_vec_scalars(convert_uint32_t_to_vec4_rgba(original_color, 0),glm::vec4 (decimal_percentage)),1,1);
+    return convert_vec4_rgba_to_uint32_t(multiply_vector_by_vec_scalars(convert_uint32_t_to_vec4_rgba(original_color, 0),glm::vec4 (decimal_percentage_scalar)),0);
 }
 
 
@@ -309,7 +300,7 @@ class Plane : public Shape_custom
             if (chessboard > 0.5) {
                 glm::vec4 original_color = convert_uint32_t_to_vec4_rgba(this->color, 0);
                 glm::vec4 shaded_color = 0.5f * convert_uint32_t_to_vec4_rgba(this->color, 0);
-                uint32_t result = convert_vec4_rgba_to_uint32_t(glm::vec4(shaded_color.x,shaded_color.y,shaded_color.z,shaded_color.w),0,1);
+                uint32_t result = convert_vec4_rgba_to_uint32_t(glm::vec4(shaded_color.x,shaded_color.y,shaded_color.z,shaded_color.w),0);
                 return result;
             }
             return this->color;
@@ -412,6 +403,7 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
         //check light_type
         if (light.w == 0.0) //directional light
         {
+            glm::vec3 light_ray = glm::vec3(light.x, light.y, light.z); //presumably the  direction is lightsource -> object, normalized
             glm::vec3 normalized_light_ray = glm::normalize(glm::vec3(light.x, light.y, light.z)); //presumably the  direction is lightsource -> object, normalized
             glm::vec3 hitpoint = calculate_hitpoint_from_distance(eye, from_eye_direction, shortest_distance);
             for (int i = 0, potential_intersections = shapes_input.size() - 1; i < shapes_input.size(); i++) //originally a for each loop, moved from it to accommodate for filtering out an indexed shape 
@@ -430,27 +422,34 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
                             glm::vec4 directional_light_color = glm::vec4(0.7, 0.5, 0.0, 1.0);
                             glm::vec4 ambient_light_color = glm::vec4(0.1, 0.2, 0.3, 1.0);
 
-                            //calculating diffusion value
+                            //calculating diffusion value---------------------------------------------------
                             glm::vec3 normal_direction_vector = shapes_input[relevant_shape_index]->calculate_normal_direction(hitpoint); //note that it is normalized
                             glm::vec3 normal_direction_vector_normalized = glm::normalize(normal_direction_vector);
-                            float diffusion_strength = glm::max(glm::dot(normalized_light_ray, normal_direction_vector),0.0f); //1 means they are perpendicular, and the light is maximal, 0 means that the light is parallel to the object and essentially does not hit it
+                            float diffusion_strength = glm::max(glm::dot(normalized_light_ray, normal_direction_vector_normalized),0.0f); //1 means they are perpendicular, and the light is maximal, 0 means that the light is parallel to the object and essentially does not hit it
                             
+
+                            //------------------------------------------------------------------------------
+
                             //internal testing, check that our diffusion makes sense
                             //if (diffusion_strength < 0 || diffusion_strength > 1.0)
                             //{
                             //    std::cout << "DIFFUSION VALUE DOES NOT MAKE SENSE, IT IS: " << diffusion_strength << "\n";
                             //}
 
-                            //calculating specular value
+                            //calculating specular value-------------------------------------------------
                             
                             // calculate reflection ray
-                            glm::vec3 reflection_light_ray_normalized = glm::normalize(glm::reflect(normalized_light_ray, normal_direction_vector));
-                            float spec = pow(glm::max(glm::dot(reflection_light_ray_normalized, -from_eye_direction), 0.0f),32); //in learnopengl.com this is called "spec", we have to multiply it by specularStrength and lightcolor
+                            glm::vec3 from_eye_direction_normalized = glm::normalize(from_eye_direction);
+                            glm::vec3 reflection_light_ray = (glm::reflect(-light_ray, normal_direction_vector_normalized));
+                            float specular_strength = glm::max(glm::dot(reflection_light_ray, from_eye_direction_normalized), 0.0f);
+                            float spec = pow(specular_strength,10); //in learnopengl.com this is called "spec", we have to multiply it by specularStrength and lightcolor
                             float spec_strength = spec * specular_intensity_float;
+
+                            //---------------------------------------------------------------------------
 
 
                             //DOING PHONG
-
+                            pixel_color;
                             glm::vec4 diffusion_product = multiply_vector_by_vec_scalars(directional_light_color,glm::vec4(diffusion_strength));
                             //glm::vec4 ambient_product = multiply_vector_by_vec_scalars(convert_uint32_t_to_vec4_rgba(pixel_color, 0),ambient_light_color); //this takes the original pixel_color without lighting applied at all
                             glm::vec4 ambient_product = ambient_light_color;
@@ -459,9 +458,16 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
                             //std::cout << "phong elements summed: " << diffusion_product.x+ambient_product.x+specular_product.x << std::endl;
                             //phong calculation:
                             //pixel_color = convert_vec4_rgba_to_uint32_t(multiply_vector_by_vec_scalars(convert_uint32_t_to_vec4_rgba(pixel_color,0),glm::vec4(glm::vec3(specular_product + ambient_product + specular_product),1.0)),1,1);
-                            glm::vec4 pixel_color_vector_temp = multiply_vector_by_vec_scalars(convert_uint32_t_to_vec4_rgba(pixel_color, 0), (diffusion_product));
-                            glm::vec4 pixel_color_vector_final = glm::vec4(pixel_color_vector_temp.r, pixel_color_vector_temp.g, pixel_color_vector_temp.b, 1);
-                            pixel_color = convert_vec4_rgba_to_uint32_t(pixel_color_vector_final,1,1);
+                            glm::vec4 original_object_color_percentage = convert_uint32_t_to_vec4_rgba(pixel_color, 1);
+                            
+                            //glm::vec4 pixel_color_vector_temp = multiply_vector_by_vec_scalars(original_object_color_percentage, (ambient_product+diffusion_product));
+                            
+                            glm::vec4 pixel_color_vector_temp = multiply_vector_by_vec_scalars(original_object_color_percentage, (ambient_light_color+diffusion_product+specular_product));
+
+                            
+                            //uint32_t pixel_color_uint32_temp = convert_vec4_rgba_to_uint32_t(pixel_color_vector_temp, 0, 1);//we did this step to convert the percentages back to actual values
+                            glm::vec4 pixel_color_vector_final = glm::vec4((float)(pixel_color_vector_temp.r * 255), (float)(pixel_color_vector_temp.g * 255), (float)(pixel_color_vector_temp.b * 255), (float)(1));
+                            pixel_color = convert_vec4_rgba_to_uint32_t(pixel_color_vector_final,0);
                             
                             //TEST: ONLY AMBIENT
                             //pixel_color = convert_vec4_rgba_to_uint32_t(ambient_product, 0, 1);
@@ -527,6 +533,7 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
                             if (potential_intersections == 0)
                             {
                                 in_shade = 0;
+
                             }
                         }
 
@@ -689,9 +696,9 @@ Texture::Texture(int width, int height) //added by me
 {
     std::vector<Shape_custom*> shapes;
     std::vector<float> distances; //this will include distance for each hit, -1 if non-existent
-    uint32_t sphere_2_color = convert_vec4_rgba_to_uint32_t(glm::vec4( 0.6,0.0,0.8,10.0),1,0);
-    uint32_t sphere_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(1, 0, 0, 10.0),1,0);
-    uint32_t plane_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.0, 1.0, 1.0, 10.0),1,0);
+    uint32_t sphere_2_color = convert_vec4_rgba_to_uint32_t(glm::vec4( 0.6,0.0,0.8,10.0),1);
+    uint32_t sphere_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(1, 0, 0, 10.0),1);
+    uint32_t plane_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.0, 1.0, 1.0, 10.0),1);
 
     Sphere* sphere_1 = new Sphere(0.5, glm::vec3(-0.7, -0.7, -2), sphere_1_color);
     Sphere* sphere_2 = new Sphere(0.5, glm::vec3(0.6, -0.5, -1), sphere_2_color);

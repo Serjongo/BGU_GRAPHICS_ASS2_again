@@ -608,7 +608,20 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
                         {
                             in_shade = 0;
                             glm::vec4 directional_light_color = glm::vec4(0.7, 0.5, 0.0, 1.0); //TEMPORARILY HARDCODED, WILL CHANGE SOON
-                            pixel_color_result += PerPixelLight(0,glm::vec3 (0,0,0),light_sources_directions,image_data_input, original_object_color,eye,from_eye_direction,distances_input,shapes_input,pixel_color,spotlight_positions,ambient_light,relevant_shape_index,hitpoint,light_ray,shortest_distance,spotlight_counter,directional_light_color); //ambient_lighting argument means color
+
+                            //POTENTIAL OVERFLOW PROBLEM$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+                            uint32_t direct_directional_lighting_result = PerPixelLight(0, glm::vec3(0, 0, 0), light_sources_directions, image_data_input, original_object_color, eye, from_eye_direction, distances_input, shapes_input, pixel_color, spotlight_positions, ambient_light, relevant_shape_index, hitpoint, light_ray, shortest_distance, spotlight_counter, directional_light_color); //ambient_lighting argument means color
+
+                            if ((unsigned long long)((unsigned long long)pixel_color_result + (unsigned long long)direct_directional_lighting_result) > (unsigned long long)UINTMAX_MAX)
+                            {
+                                pixel_color_result = UINTMAX_MAX;
+                            }
+                            else 
+                            {
+                                pixel_color_result += direct_directional_lighting_result;
+                            }
+
+                            //pixel_color_result += PerPixelLight(0,glm::vec3 (0,0,0),light_sources_directions,image_data_input, original_object_color,eye,from_eye_direction,distances_input,shapes_input,pixel_color,spotlight_positions,ambient_light,relevant_shape_index,hitpoint,light_ray,shortest_distance,spotlight_counter,directional_light_color); //ambient_lighting argument means color
                         }
                     }
 
@@ -661,7 +674,22 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
                                 glm::vec4 spotlight_light_color = glm::vec4(0.2, 0.5, 0.7, 1.0);
                                 //glm::vec4 ambient_light_color = glm::vec4(0.1, 0.2, 0.3, 1.0);
 
-                                pixel_color_result += PerPixelLight(0, glm::vec3(0, 0, 0), light_sources_directions, image_data_input, original_object_color, eye, from_eye_direction, distances_input, shapes_input, pixel_color, spotlight_positions, ambient_light, relevant_shape_index, hitpoint, light_ray, shortest_distance, spotlight_counter, spotlight_light_color); //ambient_lighting argument means color
+
+                                //POTENTIAL OVERFLOW PROBLEM$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+                                //pixel_color_result += PerPixelLight(0, glm::vec3(0, 0, 0), light_sources_directions, image_data_input, original_object_color, eye, from_eye_direction, distances_input, shapes_input, pixel_color, spotlight_positions, ambient_light, relevant_shape_index, hitpoint, light_ray, shortest_distance, spotlight_counter, spotlight_light_color); //ambient_lighting argument means color
+
+                                //POTENTIAL OVERFLOW PROBLEM$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+                                uint32_t spotlight_light_result = PerPixelLight(0, glm::vec3(0, 0, 0), light_sources_directions, image_data_input, original_object_color, eye, from_eye_direction, distances_input, shapes_input, pixel_color, spotlight_positions, ambient_light, relevant_shape_index, hitpoint, light_ray, shortest_distance, spotlight_counter, spotlight_light_color); //ambient_lighting argument means color
+
+                                if ((unsigned long long)((unsigned long long)pixel_color_result + (unsigned long long)spotlight_light_result) > (unsigned long long)UINTMAX_MAX)
+                                {
+                                    pixel_color_result = UINTMAX_MAX;
+                                }
+                                else
+                                {
+                                    pixel_color_result += spotlight_light_result;
+                                }
+
 
                             }
                         }

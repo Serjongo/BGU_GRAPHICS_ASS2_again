@@ -443,7 +443,7 @@ uint32_t PerPixelLight(int we_are_a_spotlight, glm::vec3 spotlight_pos, std::vec
     }
 
     float specular_strength = glm::max(glm::dot(glm::normalize(reflection_light_ray), from_eye_direction_normalized), 0.0f);
-    if (specular_strength != 0) 
+    if (specular_strength > 1.0) 
     {
         pixel_color = pixel_color + 1;
         pixel_color = pixel_color - 1;
@@ -466,8 +466,12 @@ uint32_t PerPixelLight(int we_are_a_spotlight, glm::vec3 spotlight_pos, std::vec
     
     //glm::vec4 specular_product = multiply_vector_by_vec_scalars(light_color_of_source, glm::vec4(glm::vec3(spec_strength), 1.0));
 
-    glm::vec4 specular_product = glm::vec4(light_color_of_source.x * spec_strength, light_color_of_source.y * spec_strength, light_color_of_source.z * spec_strength, 255);
-
+    glm::vec4 specular_product = glm::vec4((light_color_of_source.x * spec_strength) * 255, (light_color_of_source.y * spec_strength) * 255, (light_color_of_source.z * spec_strength) * 255, 255);
+    //convert
+    //if (specular_product.x > ) 
+    //{
+    //    std::cout << "HI!";
+    //}
 
     //std::cout << "phong elements summed: " << diffusion_product.x+ambient_product.x+specular_product.x << std::endl;
     //phong calculation:
@@ -485,8 +489,18 @@ uint32_t PerPixelLight(int we_are_a_spotlight, glm::vec3 spotlight_pos, std::vec
     }
 
     //glm::vec4 pixel_color_vector = multiply_vector_by_vec_scalars(original_object_color_values, (specular_product + diffusion_product)); // DIFFUE DOES OK, SPECULAR EH, SUMMED UP THEY FUCK ME UP
-    glm::vec4 pixel_color_vector = multiply_vector_by_vec_scalars(original_object_color_values, (specular_product + diffusion_product)); // DIFFUE DOES OK, SPECULAR EH, SUMMED UP THEY FUCK ME UP
+    // 
+    // 
+    // 
+    glm::vec4 pixel_color_vector = multiply_vector_by_vec_scalars(original_object_color_values, (diffusion_product)); // DIFFUE DOES OK, SPECULAR EH, SUMMED UP THEY FUCK ME UP
 
+    if (pixel_color_vector.x + specular_product.x > 255)
+    {
+        //std::cout << "WOAH THERE!";
+    }
+
+    pixel_color_vector = glm::vec4 (clamp(pixel_color_vector.x + specular_product.x), clamp(pixel_color_vector.y + specular_product.y), clamp(pixel_color_vector.z + specular_product.z),255); //check clamp
+    //pixel_color_vector = pixel_color_vector; //check clamp
     
     //unsigned char pixel_color_vector_x = original_object_color_values.x * (1 + specular_product.x + diffusion_product.x);
     //unsigned char pixel_color_vector_y = original_object_color_values.y * (1 + specular_product.y + diffusion_product.y);
@@ -611,16 +625,14 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
 
                             //POTENTIAL OVERFLOW PROBLEM$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
                             uint32_t direct_directional_lighting_result = PerPixelLight(0, glm::vec3(0, 0, 0), light_sources_directions, image_data_input, original_object_color, eye, from_eye_direction, distances_input, shapes_input, pixel_color, spotlight_positions, ambient_light, relevant_shape_index, hitpoint, light_ray, shortest_distance, spotlight_counter, directional_light_color); //ambient_lighting argument means color
+                            
+                            glm::vec4 pixel_color_result_vector_values = convert_uint32_t_to_vec4_rgba(pixel_color_result, 0);
+                            glm::vec4 direct_directional_lighting_result_values = convert_uint32_t_to_vec4_rgba(direct_directional_lighting_result, 0);
+                            
+                            glm::vec4 final_pixel_color_values = glm::vec4(clamp(pixel_color_result_vector_values.x + direct_directional_lighting_result_values.x), clamp(pixel_color_result_vector_values.y + direct_directional_lighting_result_values.y), clamp(pixel_color_result_vector_values.z + direct_directional_lighting_result_values.z), 255);;
 
-                            if ((unsigned long long)((unsigned long long)pixel_color_result + (unsigned long long)direct_directional_lighting_result) > (unsigned long long)UINTMAX_MAX)
-                            {
-                                pixel_color_result = UINTMAX_MAX;
-                            }
-                            else 
-                            {
-                                pixel_color_result += direct_directional_lighting_result;
-                            }
 
+                            pixel_color_result = convert_vec4_rgba_to_uint32_t(final_pixel_color_values,0);
                             //pixel_color_result += PerPixelLight(0,glm::vec3 (0,0,0),light_sources_directions,image_data_input, original_object_color,eye,from_eye_direction,distances_input,shapes_input,pixel_color,spotlight_positions,ambient_light,relevant_shape_index,hitpoint,light_ray,shortest_distance,spotlight_counter,directional_light_color); //ambient_lighting argument means color
                         }
                     }
@@ -681,14 +693,15 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
                                 //POTENTIAL OVERFLOW PROBLEM$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
                                 uint32_t spotlight_light_result = PerPixelLight(0, glm::vec3(0, 0, 0), light_sources_directions, image_data_input, original_object_color, eye, from_eye_direction, distances_input, shapes_input, pixel_color, spotlight_positions, ambient_light, relevant_shape_index, hitpoint, light_ray, shortest_distance, spotlight_counter, spotlight_light_color); //ambient_lighting argument means color
 
-                                if ((unsigned long long)((unsigned long long)pixel_color_result + (unsigned long long)spotlight_light_result) > (unsigned long long)UINTMAX_MAX)
-                                {
-                                    pixel_color_result = UINTMAX_MAX;
-                                }
-                                else
-                                {
-                                    pixel_color_result += spotlight_light_result;
-                                }
+
+                                glm::vec4 pixel_color_result_vector_values = convert_uint32_t_to_vec4_rgba(pixel_color_result, 0);
+                                glm::vec4 direct_spotlight_lighting_result_values = convert_uint32_t_to_vec4_rgba(spotlight_light_result, 0);
+
+                                glm::vec4 final_pixel_color_values = glm::vec4(clamp(pixel_color_result_vector_values.x + direct_spotlight_lighting_result_values.x), clamp(pixel_color_result_vector_values.y + direct_spotlight_lighting_result_values.y), clamp(pixel_color_result_vector_values.z + direct_spotlight_lighting_result_values.z), 255);;
+
+                                pixel_color_result = convert_vec4_rgba_to_uint32_t(final_pixel_color_values, 0);
+
+
 
 
                             }
@@ -737,7 +750,12 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
     //    pixel_color = pixel_color_uint32_temp;
 
     //}
-    
+    //glm::vec4 testing = convert_uint32_t_to_vec4_rgba(pixel_color_result, 0);
+    //if (testing.x == 0 && testing.y == 0) 
+    //{
+    //    std::cout << "alala";
+    //}
+
     return pixel_color_result;
 }
 
@@ -899,9 +917,20 @@ Texture::Texture(int width, int height) //added by me
 
             //we apply ambient lighting to the original pixel color (meaning we make it dimmer, as the only lighting parameter for now is ambient)
             image_data[x + y * width] = convert_vec4_rgba_to_uint32_t(multiply_vector_by_vec_scalars(convert_uint32_t_to_vec4_rgba(image_data[x + y * width],0), ambientLight_original),0); //ambient lighting calculation
-
+            uint32_t pixel_color_after_ambient = image_data[x + y * width];
+            glm::vec4 pixel_color_after_ambient_vector = convert_uint32_t_to_vec4_rgba(image_data[x + y * width], 0);
             //we now look to apply all the other light parameters
+
             image_data[x + y * width] = PerPixelShadow(light_sources_original, image_data,original_object_color, rayOrigin_original, rayDirection_original, distances,shapes , image_data[x + y * width],spotlight_positions,ambientLight_original);
+            uint32_t pixel_color_final = image_data[x + y * width];          
+            glm::vec4 pixel_color_final_vector = convert_uint32_t_to_vec4_rgba(image_data[x + y * width], 0);
+
+            if (pixel_color_after_ambient_vector.x > pixel_color_final_vector.x)
+            {
+                std::cout << "BUG!" << std::endl;
+                std::cout << "after_ambient: " << pixel_color_after_ambient_vector.x << std::endl;
+                std::cout << "final: " << pixel_color_final_vector.x << std::endl;
+            }
             //before we end this loop, we ought to pop the distances back out
             for (float dist : distances)
             {

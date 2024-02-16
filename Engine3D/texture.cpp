@@ -27,6 +27,7 @@ float clamp(float input)
     return input <= 255 ? input : 255;
 }
 
+
 uint32_t convert_vec4_rgba_to_uint32_t(glm::vec4 color, int input_as_decimal) //this returns a proper rgba pixel
 {
 
@@ -69,10 +70,32 @@ glm::vec4 convert_uint32_t_to_vec4_rgba(uint32_t color, int output_as_decimal) /
     }
 }
 
+
+
+
+
+
+
+
+
+//glm::vec4 multiply_vector_by_vec_scalars(glm::vec4 input, glm::vec4 scalars) //input vec4 0-255 vals, scalars vec4 0.0-1.0 vals
+//{
+//    return glm::vec4(input.r * (float)(scalars.r), input.g * (float)(scalars.g), input.b * (float)(scalars.b), input.a * (float)(scalars.a));
+//}
+
+
 glm::vec4 multiply_vector_by_vec_scalars(glm::vec4 input, glm::vec4 scalars) //input vec4 0-255 vals, scalars vec4 0.0-1.0 vals
 {
-    return glm::vec4(input.r * (float)(scalars.r), input.g * (float)(scalars.g), input.b * (float)(scalars.b), input.a * (float)(scalars.a));
+    if ((float)input.r * (float)(scalars.r) < 0) 
+    {
+        std::cout << "OY VEY";
+    }
+    return glm::vec4(clamp((float)input.r * (float)(scalars.r)), clamp((float)input.g * (float)(scalars.g)), clamp(input.b * (float)(scalars.b)), 255);
 }
+
+
+
+
 
 //for multiplying our rgba value by a decimal without fudging up our channels
 uint32_t rgba_uint32_t_scalar_multiplication(uint32_t original_color, float decimal_percentage_scalar) //decimal percentage must be between 0-1, I'm not checking for correctness because this is for internal use only
@@ -160,7 +183,7 @@ class Sphere : public Shape_custom
         glm::vec3 calculate_normal_direction(glm::vec3 hitpoint) const //this returns a direction vector which points outside of the sphere
         {
             glm::vec3 result = glm::vec3(hitpoint - this->center);
-            return result;
+            return -result;
         }
 
 
@@ -388,9 +411,10 @@ uint32_t PerPixelLight(int we_are_a_spotlight, glm::vec3 spotlight_pos, std::vec
     //glm::vec3 spotlight_pos = glm::vec3(spotlight_positions[spotlight_counter].x, spotlight_positions[spotlight_counter].y, spotlight_positions[spotlight_counter].z);
 
 
+    glm::vec3 light_to_surface_vec;
     if (we_are_a_spotlight) 
     {
-        glm::vec3 light_to_surface_vec = calculate_vector_direction(spotlight_pos, hitpoint);
+        light_to_surface_vec = calculate_vector_direction(spotlight_pos, hitpoint);
         glm::vec3 light_to_surface_vec_normalized = glm::normalize(light_to_surface_vec);
     }
 
@@ -400,20 +424,32 @@ uint32_t PerPixelLight(int we_are_a_spotlight, glm::vec3 spotlight_pos, std::vec
     //glm::vec4 ambient_light_color = glm::vec4(0.1, 0.2, 0.3, 1.0);
 
     //calculating diffusion
-    glm::vec3 normal_direction_vector = shapes_input[relevant_shape_index]->calculate_normal_direction(hitpoint); //note that it is normalized
+    glm::vec3 normal_direction_vector = shapes_input[relevant_shape_index]->calculate_normal_direction(hitpoint);
     glm::vec3 normal_direction_vector_normalized = glm::normalize(normal_direction_vector);
     float diffusion_strength = glm::max(glm::dot(light_ray_normalized, normal_direction_vector_normalized), 0.0f); //1 means they are perpendicular, and the light is maximal, 0 means that the light is parallel to the object and essentially does not hit it
-
-
-
     //---------------------
 
     //calculating specular
     glm::vec3 from_eye_direction_normalized = glm::normalize(from_eye_direction);
-    glm::vec3 reflection_light_ray = (glm::reflect(-light_ray, normal_direction_vector_normalized));
+    glm::vec3 reflection_light_ray;
 
-    float specular_strength = glm::max(glm::dot(reflection_light_ray, from_eye_direction_normalized), 0.0f);
+    if (we_are_a_spotlight) 
+    {
+        reflection_light_ray = (glm::reflect(light_to_surface_vec, normal_direction_vector_normalized));
+    }
+    else 
+    {
+        reflection_light_ray = (glm::reflect(-light_ray_normalized, normal_direction_vector_normalized));
+    }
+
+    float specular_strength = glm::max(glm::dot(glm::normalize(reflection_light_ray), from_eye_direction_normalized), 0.0f);
+    if (specular_strength != 0) 
+    {
+        pixel_color = pixel_color + 1;
+        pixel_color = pixel_color - 1;
+    }
     float spec = (pow(specular_strength, 10)); //in learnopengl.com this is called "spec", we have to multiply it by specularStrength and lightcolor
+
     float spec_strength = spec * specular_intensity_float;
 
     //--------------------
@@ -423,31 +459,89 @@ uint32_t PerPixelLight(int we_are_a_spotlight, glm::vec3 spotlight_pos, std::vec
     //-------------------
 
     //DOING PHONG
-    glm::vec4 diffusion_product = multiply_vector_by_vec_scalars(light_color_of_source, glm::vec4(diffusion_strength));
+    glm::vec4 diffusion_product = multiply_vector_by_vec_scalars(light_color_of_source, glm::vec4(glm::vec3(diffusion_strength),1.0));
     //glm::vec4 ambient_product = multiply_vector_by_vec_scalars(convert_uint32_t_to_vec4_rgba(pixel_color, 0),ambient_light_color); //this takes the original pixel_color without lighting applied at all
     glm::vec4 ambient_product = ambient_light;
-    glm::vec4 specular_product = multiply_vector_by_vec_scalars(light_color_of_source, glm::vec4(glm::vec3(spec_strength), 1));
+    
+    
+    //glm::vec4 specular_product = multiply_vector_by_vec_scalars(light_color_of_source, glm::vec4(glm::vec3(spec_strength), 1.0));
+
+    glm::vec4 specular_product = glm::vec4(light_color_of_source.x * spec_strength, light_color_of_source.y * spec_strength, light_color_of_source.z * spec_strength, 255);
+
 
     //std::cout << "phong elements summed: " << diffusion_product.x+ambient_product.x+specular_product.x << std::endl;
     //phong calculation:
     //pixel_color = convert_vec4_rgba_to_uint32_t(multiply_vector_by_vec_scalars(convert_uint32_t_to_vec4_rgba(pixel_color,0),glm::vec4(glm::vec3(specular_product + ambient_product + specular_product),1.0)),1,1);
     glm::vec4 original_object_color_percentage = convert_uint32_t_to_vec4_rgba(original_object_color, 1);
+    glm::vec4 original_object_color_values = convert_uint32_t_to_vec4_rgba(original_object_color, 0);
 
     //glm::vec4 pixel_color_vector_temp = multiply_vector_by_vec_scalars(original_object_color_percentage, (ambient_product+diffusion_product));
 
 
-    glm::vec4 pixel_color_vector_temp = multiply_vector_by_vec_scalars(original_object_color_percentage, (specular_product));
 
-
-    //uint32_t pixel_color_uint32_temp = convert_vec4_rgba_to_uint32_t(pixel_color_vector_temp, 0, 1);//we did this step to convert the percentages back to actual values
-    glm::vec4 pixel_color_vector_final = glm::vec4((float)(pixel_color_vector_temp.r * 255), (float)(pixel_color_vector_temp.g * 255), (float)(pixel_color_vector_temp.b * 255), (float)(1));
-    //pixel_color = convert_vec4_rgba_to_uint32_t(pixel_color_vector_final, 0);
+    if (original_object_color_percentage.x == 1.0 && original_object_color_percentage.z == 0) 
+    {
     
+    }
+
+    //glm::vec4 pixel_color_vector = multiply_vector_by_vec_scalars(original_object_color_values, (specular_product + diffusion_product)); // DIFFUE DOES OK, SPECULAR EH, SUMMED UP THEY FUCK ME UP
+    glm::vec4 pixel_color_vector = multiply_vector_by_vec_scalars(original_object_color_values, (specular_product + diffusion_product)); // DIFFUE DOES OK, SPECULAR EH, SUMMED UP THEY FUCK ME UP
+
+    
+    //unsigned char pixel_color_vector_x = original_object_color_values.x * (1 + specular_product.x + diffusion_product.x);
+    //unsigned char pixel_color_vector_y = original_object_color_values.y * (1 + specular_product.y + diffusion_product.y);
+    //unsigned char pixel_color_vector_z = original_object_color_values.z * (1 + specular_product.z + diffusion_product.z);
+
+    if (pixel_color_vector.x == 0 && pixel_color_vector.y == 0 && pixel_color_vector.z == 0)
+    {
+        //std::cout << pixel_color_vector.x;
+    }
+    //if (pixel_color_vector.y > 255)
+    //{
+    //    std::cout << pixel_color_vector.y;
+    //}
+    //if (pixel_color_vector.z > 255)
+    //{
+    //    std::cout << pixel_color_vector.z;
+    //}
+
+    //glm::vec4 pixel_color_vector = glm::vec4 ( 
+    //    pixel_color_vector_x,
+    //    pixel_color_vector_y,
+    //    pixel_color_vector_z
+    //    , 255);
+
+
+
+
+
+
+
+    //if (pixel_color_vector.x > 255 || pixel_color_vector.y > 255 || pixel_color_vector.z > 255 || pixel_color_vector.w > 255)
+    //{
+    //    std::cout << "lolol\n";
+    //}   
     
     //pixel_color_result += convert_vec4_rgba_to_uint32_t(pixel_color_vector_final, 0);
     
+    uint32_t final_result = convert_vec4_rgba_to_uint32_t(glm::vec4(pixel_color_vector.x, pixel_color_vector.y, pixel_color_vector.z, 255), 0);
     
-    return convert_vec4_rgba_to_uint32_t(pixel_color_vector_final, 0);
+    if (original_object_color_percentage.x == 1.0 && original_object_color_percentage.z == 0)
+    {
+        //std::cout << "bingbong\n";
+        if (pixel_color_vector.x == 0)
+        {
+            //std::cout << diffusion_product.x + specular_product.x;
+        }
+        else if (specular_product.x > 1)
+        {
+            //std::cout << specular_product.x << std::endl;
+            //std::cout << pixel_color_vector.x << std::endl;
+        }
+
+    }
+
+    return final_result;
 }
 
 
@@ -492,10 +586,22 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
             glm::vec3 hitpoint = calculate_hitpoint_from_distance(eye, from_eye_direction, shortest_distance);
             for (int i = 0, potential_intersections = shapes_input.size() - 1; i < shapes_input.size(); i++) //originally a for each loop, moved from it to accommodate for filtering out an indexed shape 
             {
+                if (original_object_color == convert_vec4_rgba_to_uint32_t(glm::vec4(255, 0, 0, 255), 0)) 
+                {
+                    //std::cout << "I'M THE RED BALL" << std::endl;
+                    pixel_color = pixel_color + 1;
+                    pixel_color = pixel_color - 1;
+                }
+                //else 
+                //{
+                //    std::cout << "BIM BAM BOM" << std::endl;
+                //}
+
+
                 if (i != relevant_shape_index) //don't check intersection with myself. ADDITIONALLY: the i of the distances may be in inverse to the shapes vector, may have to switch them around. 
                 {
                     float distance_to_intersection = shapes_input[i]->intersection(hitpoint, -normalized_light_ray, pixel_color); //notice that light ray is reversed, otherwise i get a negative direction in intersection and dont return it
-                    if (distance_to_intersection < 0)
+                    if (distance_to_intersection < 0 || distance_to_intersection >= shortest_distance)
                     {
                         potential_intersections--;
                         if (potential_intersections == 0)
@@ -544,7 +650,7 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
                     if (i != relevant_shape_index) //don't check intersection with myself. ADDITIONALLY: the i of the distances may be in inverse to the shapes vector, may have to switch them around. 
                     {
                         float distance_to_intersection = shapes_input[i]->intersection(hitpoint, calculate_vector_direction(hitpoint, spotlight_pos), pixel_color);
-                        if (distance_to_intersection < 0)
+                        if (distance_to_intersection < 0 || distance_to_intersection >= shortest_distance)
                         {
                             potential_intersections--;
                             if (potential_intersections == 0)

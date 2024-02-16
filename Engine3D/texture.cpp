@@ -419,10 +419,6 @@ uint32_t PerPixelLight(int we_are_a_spotlight, glm::vec3 spotlight_pos, std::vec
     }
 
 
-    //HARD-CODED VARIABLE TO BE REPLACED WITH PROPER INPUT
-    //glm::vec4 spotlight_light_color = glm::vec4(0.2, 0.5, 0.7, 1.0);
-    //glm::vec4 ambient_light_color = glm::vec4(0.1, 0.2, 0.3, 1.0);
-
     //calculating diffusion
     glm::vec3 normal_direction_vector = shapes_input[relevant_shape_index]->calculate_normal_direction(hitpoint);
     glm::vec3 normal_direction_vector_normalized = glm::normalize(normal_direction_vector);
@@ -435,7 +431,7 @@ uint32_t PerPixelLight(int we_are_a_spotlight, glm::vec3 spotlight_pos, std::vec
 
     if (we_are_a_spotlight) 
     {
-        reflection_light_ray = (glm::reflect(light_to_surface_vec, normal_direction_vector_normalized));
+        reflection_light_ray = (glm::reflect(-light_to_surface_vec, normal_direction_vector_normalized));
     }
     else 
     {
@@ -691,7 +687,7 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, uint32_
                                 //pixel_color_result += PerPixelLight(0, glm::vec3(0, 0, 0), light_sources_directions, image_data_input, original_object_color, eye, from_eye_direction, distances_input, shapes_input, pixel_color, spotlight_positions, ambient_light, relevant_shape_index, hitpoint, light_ray, shortest_distance, spotlight_counter, spotlight_light_color); //ambient_lighting argument means color
 
                                 //POTENTIAL OVERFLOW PROBLEM$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-                                uint32_t spotlight_light_result = PerPixelLight(0, glm::vec3(0, 0, 0), light_sources_directions, image_data_input, original_object_color, eye, from_eye_direction, distances_input, shapes_input, pixel_color, spotlight_positions, ambient_light, relevant_shape_index, hitpoint, light_ray, shortest_distance, spotlight_counter, spotlight_light_color); //ambient_lighting argument means color
+                                uint32_t spotlight_light_result = PerPixelLight(1, spotlight_pos, light_sources_directions, image_data_input, original_object_color, eye, from_eye_direction, distances_input, shapes_input, pixel_color, spotlight_positions, ambient_light, relevant_shape_index, hitpoint, light_ray, shortest_distance, spotlight_counter, spotlight_light_color); //ambient_lighting argument means color
 
 
                                 glm::vec4 pixel_color_result_vector_values = convert_uint32_t_to_vec4_rgba(pixel_color_result, 0);

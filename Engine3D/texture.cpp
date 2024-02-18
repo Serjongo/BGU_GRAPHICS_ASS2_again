@@ -558,9 +558,11 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
     //SETTING UP INFRASTRUCTURE FOR REFLECTIONS-------------------
     //default values, may change if we hit a reflective surface
     glm::vec3 rayOrigin = eye; 
+    glm::vec3 rayOrigin_before_initial_reflect = rayOrigin; //not used currently;
     glm::vec3 rayDirection = from_eye_direction;
     int relevant_reflection_shape_index = -1;
-    
+    glm::vec3 normal_on_mirror;
+    glm::vec3 rayOrigin_on_mirror;
 
 
 
@@ -576,7 +578,7 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
     //specular intensity is set as a hard-coded 0.7. It does not affect the alpha channel
     glm::vec4 specular_intensity_vec = glm::vec4(0.7, 0.7, 0.7, 1.0);
     float specular_intensity_float = 0.7;
-    glm::vec3 normal_on_mirror;
+
 
 
     //calculate the shortest distance from the eye, this is how we find a hitpoint, from which we calculate a ray to a light source
@@ -604,7 +606,7 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
             //find the reflected shape
             //checking for reflections now - we only do 1 hop!
             //we do it again now to grab more info, and fire one more ray, lets do it
-            glm::vec3 rayOrigin_on_mirror = calculate_hitpoint_from_distance(rayOrigin, rayDirection, distances_input[relevant_shape_index]);
+            rayOrigin_on_mirror = calculate_hitpoint_from_distance(rayOrigin, rayDirection, distances_input[relevant_shape_index]);
             normal_on_mirror = shapes_input[relevant_shape_index]->calculate_normal_direction(rayOrigin_on_mirror);
             glm::vec3 rayDirection_from_mirror = glm::reflect(rayDirection, normal_on_mirror); //may need to negate the normal on mirror
 
@@ -632,8 +634,8 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
                     shortest_distance = reflections_distances[i];
                     relevant_reflection_shape_index = i;
                     original_object_color = shapes_input[relevant_reflection_shape_index]->getColor(calculate_hitpoint_from_distance(rayOrigin_on_mirror, rayDirection_from_mirror, shortest_distance));
-                    //rayOrigin = rayOrigin_on_mirror;
-                    //rayDirection = rayDirection_from_mirror;
+                    rayOrigin = rayOrigin_on_mirror;
+                    rayDirection = rayDirection_from_mirror;
                 }
             }
             if (shortest_distance == INT_MAX) //meaning the reflection doesnt hit anything
@@ -658,13 +660,14 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
     for (glm::vec4 light : light_sources_directions) //I may only filter specific light source types, MAY CHANGE.
     {
         char in_shade = 1; //I'm in shade until proven not to be. This is important because we potentially may be under shade with one source of light, but another light may still shine at us.
-        glm::vec3 light_ray;
+        glm::vec3 light_ray = glm::vec3(light.x, light.y, light.z); //presumably the  direction is lightsource -> object
+        glm::vec3 ORIGINAL_light_ray = light_ray; //this is a backup for reflection, for spotlight specifically, only for the cone dot calculation
         glm::vec3 normalized_light_ray;
 
         //170224 - added reflection status, I'll have to work with reflected light here
         if(shapes_input[relevant_shape_index]->get_reflecting_status() == 1)
         {
-            light_ray = glm::vec3(light.x, light.y, light.z); //presumably the  direction is lightsource -> object
+            
             glm::vec3 reflected_light_ray = glm::reflect(light_ray, normal_on_mirror);
             light_ray = reflected_light_ray; //meaning the light ray we work with is the reflected one
             normalized_light_ray = glm::normalize(light_ray); //presumably the  direction is lightsource -> object, normalized
@@ -672,36 +675,40 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
         }
         else //we work as per usual, no reflections
         {
-            light_ray = glm::vec3(light.x, light.y, light.z); //presumably the  direction is lightsource -> object
             normalized_light_ray = glm::normalize(light_ray); //presumably the  direction is lightsource -> object, normalized
         }
 
 
         //check light_type
-        if (light.w == 0.0) //directional light
+        if (light.w == 0.0 && relevant_shape_index != -1) //directional light
         {
             glm::vec3 hitpoint = calculate_hitpoint_from_distance(rayOrigin, rayDirection, shortest_distance);
-            for (int i = 0, potential_intersections = shapes_input.size() - 1; i < shapes_input.size(); i++) //originally a for each loop, moved from it to accommodate for filtering out an indexed shape 
+
+
+            int potential_intersections;
+            if (relevant_reflection_shape_index == -1)
             {
-                //if (original_object_color == convert_vec4_rgba_to_uint32_t(glm::vec4(255, 0, 0, 255), 0))
-                //{
-                //    //std::cout << "I'M THE RED BALL" << std::endl;
-                //    pixel_color = pixel_color + 1;
-                //    pixel_color = pixel_color - 1;
-                //}
-                //else 
-                //{
-                //    std::cout << "BIM BAM BOM" << std::endl;
-                //}
+                potential_intersections = shapes_input.size() - 1;
+            }
+            else 
+            {
+                potential_intersections = shapes_input.size() - 2;
+                if (potential_intersections < 0) //make sure we don't go negative
+                {
+                    potential_intersections = 0;
+                }
+            }
 
+            for (int i = 0; i < shapes_input.size(); i++) //originally a for each loop, moved from it to accommodate for filtering out an indexed shape 
+            {
 
-                if (i != relevant_shape_index && relevant_shape_index != -1) //don't check intersection with myself. ADDITIONALLY: the i of the distances may be in inverse to the shapes vector, may have to switch them around. 
+                if (i != relevant_shape_index && i != relevant_reflection_shape_index && relevant_shape_index != -1) //don't check intersection with myself. ADDITIONALLY: the i of the distances may be in inverse to the shapes vector, may have to switch them around. 
                 {
                     float distance_to_intersection = shapes_input[i]->intersection(hitpoint, -normalized_light_ray, pixel_color); //notice that light ray is reversed, otherwise i get a negative direction in intersection and dont return it
                     if (distance_to_intersection < 0 || distance_to_intersection >= shortest_distance)
                     {
                         potential_intersections--;
-                        if (potential_intersections == 0)
+                        if (potential_intersections <= 0)
                         {
 
                             in_shade = 0;
@@ -716,7 +723,7 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
                             //POTENTIAL OVERFLOW PROBLEM$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
                             uint32_t direct_directional_lighting_result;
                             direct_directional_lighting_result = PerPixelLight(0, glm::vec3(0, 0, 0), light_sources_directions, image_data_input, original_object_color, rayOrigin, rayDirection, distances_input, shapes_input, pixel_color, spotlight_positions, ambient_light, relevant_shape_index, relevant_reflection_shape_index, hitpoint, light_ray, shortest_distance, spotlight_counter, light_sources_colors[light_source_index]); //ambient_lighting argument means color
-
+                            //direct_directional_lighting_result = 0;
                             //testing
                             if (direct_directional_lighting_result != 0xff000000 && shapes_input[relevant_shape_index]->get_reflecting_status() == 1)
                             {
@@ -750,8 +757,26 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
         else if (light.w == 1.0 && relevant_shape_index != -1) //spotlight - added vector normalization
         {
             glm::vec3 hitpoint = calculate_hitpoint_from_distance(rayOrigin, rayDirection, shortest_distance);
+            glm::vec3 hitpoint_on_reflected_object;
+            //glm::vec3 spotlight_pos;
+
+            //if we're not dealing with a mirror, just work normally, since the hitpoint will be on the end of the ray
+            if(relevant_reflection_shape_index == -1)
+            {
+                //glm::vec3 hitpoint = calculate_hitpoint_from_distance(rayOrigin, rayDirection, shortest_distance);
+                //spotlight_pos = glm::vec3(spotlight_positions[spotlight_counter].x, spotlight_positions[spotlight_counter].y, spotlight_positions[spotlight_counter].z);
+            }
+            //if we're hitting a mirror, the rayOrigin and direction will result in a reflected hitpoint, but our goal is to see that the light actually hits the mirror properly first, so we put the hitpoint back on the mirror
+            else 
+            {
+                hitpoint_on_reflected_object = hitpoint;
+                hitpoint = rayOrigin_on_mirror; // we want to work with the original mirror hitpoint, only if we made sure we hit it properly we can adjust it
+                //spotlight_pos = rayOrigin; //this should be the spot on the mirror
+            }
             glm::vec3 spotlight_pos = glm::vec3(spotlight_positions[spotlight_counter].x, spotlight_positions[spotlight_counter].y, spotlight_positions[spotlight_counter].z);
-            glm::vec3 light_to_surface_vec = glm::normalize(calculate_vector_direction(spotlight_pos, hitpoint));
+            
+            
+            glm::vec3 light_to_surface_vec = (calculate_vector_direction(spotlight_pos, hitpoint));
 
             //unused
             float angle_radians = std::acos(glm::dot(light_to_surface_vec, light_ray) / (glm::length(light_to_surface_vec) * glm::length(light_ray)));
@@ -764,12 +789,38 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
             //
 
             //DO NOTE: THIS DOES NOT MAKE SENSE IN ITS CURRENT CURRENT FORM, THE COMPARISON SHOULD GO THE OTHER WAY, OUR COS(a) SHOULD BE SMALLER THAN THE CUTOFF ANGLE, FOR SOME REASON IT PRODUCES THE INVERSE OF THE RESULTS, THIS DOES NOT MAKE ANY SENSE.
-            if (glm::dot(light_to_surface_vec, light_ray) / (glm::length(light_to_surface_vec) * glm::length(light_ray)) > spotlight_positions[spotlight_counter].w) //if our angle is smaller than the cutoff angle, light could theoretically reach us
+            if (glm::dot(light_to_surface_vec, ORIGINAL_light_ray) / (glm::length(light_to_surface_vec) * glm::length(ORIGINAL_light_ray)) > spotlight_positions[spotlight_counter].w) //if our angle is smaller than the cutoff angle, light could theoretically reach us
             {
 
-                for (int i = 0, potential_intersections = shapes_input.size() - 1; i < shapes_input.size(); i++) //originally a for each loop, moved from it to accommodate for filtering out an indexed shape 
+                // now that we've passed the first "obstacle" (if it's concrete then we're done and we just keep on going, but not for mirrors), we may fire the actual reflected ray.
+                if (relevant_reflection_shape_index == -1) //this means we're NOT working with a mirror
                 {
-                    if (i != relevant_shape_index) //don't check intersection with myself. ADDITIONALLY: the i of the distances may be in inverse to the shapes vector, may have to switch them around. 
+                    
+                }
+                else //we do work with a mirror, so we adjust the points. the hitpoint will be on the reflected object, and the origin will be on the mirror (origin being the lamp position)
+                {
+                    hitpoint = hitpoint_on_reflected_object;
+                    spotlight_pos = rayOrigin_on_mirror;
+                }
+
+                int potential_intersections;
+                if (relevant_reflection_shape_index == -1) // if we're not dealing with a reflection, then we don't compare with only the shape we're on
+                {
+                    potential_intersections = shapes_input.size() - 1;
+                }
+                else //otherwise we also don't compare with the shape we're reflecting on, make sure we don't fall below 0 though
+                {
+                    potential_intersections = shapes_input.size() - 2;
+                    if (potential_intersections < 0) //make sure we don't go negative
+                    {
+                        potential_intersections = 0;
+                    }
+                }
+
+                for (int i = 0; i < shapes_input.size(); i++) //originally a for each loop, moved from it to accommodate for filtering out an indexed shape 
+                {
+                    //if this is not a reflection, relevant_reflection_shape will be -1 and won't be relevant either way
+                    if ((i != relevant_shape_index) && (i != relevant_reflection_shape_index)) //don't check intersection with myself. ADDITIONALLY: the i of the distances may be in inverse to the shapes vector, may have to switch them around. 
                     {
                         float distance_to_intersection = shapes_input[i]->intersection(hitpoint, calculate_vector_direction(hitpoint, spotlight_pos), pixel_color);
                         if (distance_to_intersection < 0 || distance_to_intersection >= shortest_distance)
@@ -791,12 +842,12 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
                                 uint32_t spotlight_light_result;
 
                                 spotlight_light_result = PerPixelLight(1, spotlight_pos, light_sources_directions, image_data_input, original_object_color, rayOrigin, rayDirection, distances_input, shapes_input, pixel_color, spotlight_positions, ambient_light,relevant_shape_index, relevant_reflection_shape_index , hitpoint, light_ray, shortest_distance, spotlight_counter, light_sources_colors[light_source_index]); //ambient_lighting argument means color
-
+                                //spotlight_light_result = 0;
 
                                 //testing
                                 if (spotlight_light_result != 0xff000000 && shapes_input[relevant_shape_index]->get_reflecting_status() == 1)
                                 {
-                                    std::cout << "I added light to reflected surface"; 
+                                    //std::cout << "I added light to reflected surface"; 
                                 }
                                 //
 
@@ -981,7 +1032,7 @@ Texture::Texture(int width, int height) //added by me
 
     Sphere* sphere_1 = new Sphere(0.5, glm::vec3(-0.7, 0.7, -2.0), sphere_1_color,0);
     Sphere* sphere_2 = new Sphere(0.5, glm::vec3(0.6, 0.5, -1.0), sphere_2_color,0);
-    Plane* plane_1 = new Plane(glm::vec4(0, -0.5, -1.0, -3.5), plane_1_color,1);
+    Plane* plane_1 = new Plane(glm::vec4(0, -0.5, -1.0, -3.5), plane_1_color,0);
     glm::vec3 rayOrigin_original(0.0f, 0.0f, 4.0f); //note that moving forward in the z direction is actually backwards in relation to the ray we shoot, since it shoots in the negative direction
     std::vector<glm::vec4> light_sources_original;
     std::vector<glm::vec4> light_sources_colors;

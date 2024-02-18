@@ -133,6 +133,7 @@ public:
     virtual uint32_t getColor(glm::vec3 hitPoint) const = 0;
     virtual glm::vec3 calculate_normal_direction(glm::vec3 hitpoint) const = 0;
     virtual int get_reflecting_status() const = 0;
+    virtual float get_shininess_value() const = 0;
     virtual void setColor(uint32_t color) = 0;
 };
 
@@ -142,6 +143,7 @@ private:
     float radius;
     glm::vec3 center;
     uint32_t color;
+    float shininess;
     int reflects_light;
 public:
     //setters
@@ -162,18 +164,31 @@ public:
     {
         return this->color;
     }
+    float get_shininess_value() const override
+    {
+        return this->shininess;
+    }
     int get_reflecting_status() const override
     {
         return this->reflects_light;
     }
 
     //constructors
+    Sphere(float radius, glm::vec3 center, uint32_t color, int reflects_light, float shininess)
+    {
+        this->reflects_light = reflects_light;
+        this->radius = radius;
+        this->center = center;
+        this->color = color;
+        this->shininess = shininess;
+    }
     Sphere(float radius, glm::vec3 center, uint32_t color,int reflects_light)
     {
         this->reflects_light = reflects_light;
         this->radius = radius;
         this->center = center; 
         this->color = color;
+        this->shininess = 10.0;
     }
     Sphere(float radius, glm::vec3 center, uint32_t color)
     {
@@ -181,6 +196,7 @@ public:
         this->center = center;
         this->color = color;
         this->reflects_light = 0;
+        this->shininess = 10.0;
     }
     Sphere(float radius, glm::vec3 center) //we use this if we don't know the current color, and reflecting status (meaning its not)
     {
@@ -188,6 +204,7 @@ public:
         this->center = center;
         this->color = 0xff000000; //fully opaque, and black.
         this->reflects_light = 0;
+        this->shininess = 10.0;
     }
 
 
@@ -288,25 +305,36 @@ private:
     glm::vec4 plane_coord;
     uint32_t color;
     int reflects_light;
+    float shininess;
 public:
     //constructors
+    Plane(glm::vec4 plane_coord, uint32_t color, int reflects_light,float shininess)
+    {
+        this->plane_coord = plane_coord;
+        this->color = color;
+        this->reflects_light = reflects_light;
+        this->shininess = shininess;
+    }
     Plane(glm::vec4 plane_coord, uint32_t color,int reflects_light)
     {
         this->plane_coord = plane_coord;
         this->color = color;
         this->reflects_light = reflects_light;
+        this->shininess = 10.0;
     }
     Plane(glm::vec4 plane_coord, uint32_t color)
     {
         this->plane_coord = plane_coord;
         this->color = color;
         this->reflects_light = 0;
+        this->shininess = 10.0;
     }
     Plane(glm::vec4 plane_coord)
     {
         this->plane_coord = plane_coord;
         this->color = 0xff000000; //fully opaque, and black.
         this->reflects_light = 0;
+        this->shininess = 10.0;
     }
 
     //setters
@@ -323,6 +351,10 @@ public:
     int get_reflecting_status() const override
     {
         return this->reflects_light;
+    }
+    float get_shininess_value() const override
+    {
+        return this->shininess;
     }
     //------------FOR PLANE CHECKERBOARD COLOR PATTERN, COPIED FROM PS5 ------------------------
     uint32_t getColor(glm::vec3 hitPoint) const
@@ -487,7 +519,18 @@ uint32_t PerPixelLight(int we_are_a_spotlight, glm::vec3 spotlight_pos, std::vec
         pixel_color = pixel_color + 1;
         pixel_color = pixel_color - 1;
     }
-    float spec = (pow(specular_strength, 10)); //in learnopengl.com this is called "spec", we have to multiply it by specularStrength and lightcolor
+
+
+    float spec;
+    if (relevant_reflected_shape_index == -1) 
+    {
+        spec = (pow(specular_strength, shapes_input[relevant_shape_index]->get_shininess_value())); //in learnopengl.com this is called "spec", we have to multiply it by specularStrength and lightcolor
+    }
+    else 
+    {
+        spec = (pow(specular_strength, shapes_input[relevant_reflected_shape_index]->get_shininess_value()));
+    }
+    
 
     float spec_strength = spec * specular_intensity_float;
 
@@ -826,12 +869,12 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
                         if (distance_to_intersection < 0 || distance_to_intersection >= shortest_distance)
                         {
                             potential_intersections--;
-                            if (potential_intersections == 0)
+                            if (potential_intersections <= 0)
                             {
                                 in_shade = 0;
 
                                 //HARD-CODED VARIABLE TO BE REPLACED WITH PROPER INPUT
-                                glm::vec4 spotlight_light_color = glm::vec4(0.2, 0.5, 0.7, 1.0);
+                                //glm::vec4 spotlight_light_color = glm::vec4(0.2, 0.5, 0.7, 1.0);
                                 //glm::vec4 ambient_light_color = glm::vec4(0.1, 0.2, 0.3, 1.0);
 
 
@@ -1023,45 +1066,177 @@ uint32_t PerPixel(glm::vec2 coord, glm::vec3 rayDirection, std::vector<Shape_cus
 
 Texture::Texture(int width, int height) //added by me
 {
+
+    //SCENE 5
+    //std::vector<Shape_custom*> shapes;
+    //std::vector<int> shapes_reflecting_statuses;
+    //std::vector<float> distances; //this will include distance for each hit, -1 if non-existent
+    //uint32_t sphere_2_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.6, 0.0, 0.8, 10.0), 1);
+    //uint32_t sphere_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(1, 0, 0, 10.0), 1);
+    //uint32_t plane_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.0, 1.0, 1.0, 10.0), 1);
+
+    //Sphere* sphere_1 = new Sphere(0.5, glm::vec3(-0.7, 0.7, -2.0), sphere_1_color,0);
+    //Sphere* sphere_2 = new Sphere(0.5, glm::vec3(0.6, 0.5, -1.0), sphere_2_color,0);
+    //Plane* plane_1 = new Plane(glm::vec4(0, -0.5, -1.0, -3.5), plane_1_color,1);
+    //glm::vec3 rayOrigin_original(0.0f, 0.0f, 4.0f); //note that moving forward in the z direction is actually backwards in relation to the ray we shoot, since it shoots in the negative direction
+    //std::vector<glm::vec4> light_sources_original;
+    //std::vector<glm::vec4> light_sources_colors;
+    //std::vector<glm::vec4> spotlight_positions;
+    //glm::vec3 rayDirection_original; //from eye to screen
+    //glm::vec4 ambientLight_original = glm::vec4(0.1, 0.2, 0.3, 1.0);
+
+    //light_sources_original.push_back(glm::vec4(0.5, 0.0, -1.0, 1.0)); //spot light
+    //light_sources_colors.push_back(glm::vec4(0.2, 0.5, 0.7, 1.0)); //spot light color
+
+
+    //light_sources_original.push_back(glm::vec4(0.0, 0.5, -1.0, 0.0)); //directional light
+    //light_sources_colors.push_back(glm::vec4(0.7, 0.5, 0.0, 1.0)); //directional light color
+
+    //spotlight_positions.push_back(glm::vec4(2.0, 1.0, 3.0, 0.6)); //do note that the 4th parameter is probably the cutoff angle: 0.6 * 255deg
+
+    //shapes.push_back(sphere_1);
+    //shapes_reflecting_statuses.push_back(sphere_1->get_reflecting_status());
+    //shapes.push_back(sphere_2);
+    //shapes_reflecting_statuses.push_back(sphere_2->get_reflecting_status());
+    //shapes.push_back(plane_1);
+    //shapes_reflecting_statuses.push_back(plane_1->get_reflecting_status());
+
+    //SCENE 1
+
+    //std::vector<Shape_custom*> shapes;
+    //std::vector<int> shapes_reflecting_statuses;
+    //std::vector<float> distances; //this will include distance for each hit, -1 if non-existent
+    //uint32_t sphere_2_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.6, 0.0, 0.8, 10.0), 1);
+    //uint32_t sphere_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(1, 0, 0, 10.0), 1);
+    //uint32_t plane_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.0, 1.0, 1.0, 10.0), 1);
+
+    //Sphere* sphere_1 = new Sphere(0.5, glm::vec3(-0.7, -0.7, -2.0), sphere_1_color, 0,10.0);
+    //Sphere* sphere_2 = new Sphere(0.5, glm::vec3(0.6, -0.5, -1.0), sphere_2_color, 0,10.0);
+    //Plane* plane_1 = new Plane(glm::vec4(0, -0.5, -1.0, -3.5), plane_1_color, 0,10.0);
+    //glm::vec3 rayOrigin_original(0.0f, 0.0f, 4.0f); //note that moving forward in the z direction is actually backwards in relation to the ray we shoot, since it shoots in the negative direction
+    //std::vector<glm::vec4> light_sources_original;
+    //std::vector<glm::vec4> light_sources_colors;
+    //std::vector<glm::vec4> spotlight_positions;
+    //glm::vec3 rayDirection_original; //from eye to screen
+    //glm::vec4 ambientLight_original = glm::vec4(0.1, 0.2, 0.3, 1.0);
+
+    //light_sources_original.push_back(glm::vec4(0.5, 0.0, -1.0, 1.0)); //spot light
+    //light_sources_colors.push_back(glm::vec4(0.2, 0.5, 0.7, 1.0)); //spot light color
+
+
+    //light_sources_original.push_back(glm::vec4(0.0, 0.5, -1.0, 0.0)); //directional light
+    //light_sources_colors.push_back(glm::vec4(0.7, 0.5, 0.0, 1.0)); //directional light color
+
+    //spotlight_positions.push_back(glm::vec4(2.0, 1.0, 3.0, 0.6)); //do note that the 4th parameter is probably the cutoff angle: 0.6 * 255deg
+
+    //shapes.push_back(sphere_1);
+    //shapes_reflecting_statuses.push_back(sphere_1->get_reflecting_status());
+    //shapes.push_back(sphere_2);
+    //shapes_reflecting_statuses.push_back(sphere_2->get_reflecting_status());
+    //shapes.push_back(plane_1);
+    //shapes_reflecting_statuses.push_back(plane_1->get_reflecting_status());
+
+    //SCENE 3
+
+    //std::vector<Shape_custom*> shapes;
+    //std::vector<int> shapes_reflecting_statuses;
+    //std::vector<float> distances; //this will include distance for each hit, -1 if non-existent
+    //uint32_t plane_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.6,0.0,0.8,20.0), 1);
+    //uint32_t plane_2_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.7,0.7,0.0,10.0), 1);
+    //uint32_t plane_3_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.0,0.9,0.5,15.0), 1);
+    //uint32_t plane_4_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.0,0.8,0.8,10.0), 1);
+    //uint32_t plane_5_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.9,0.0,0.1,15.0), 1);
+
+
+    //Plane* plane_1 = new Plane(glm::vec4(1.0,0.0,-0.1,-3.0), plane_1_color, 0, 20.0);
+    //Plane* plane_2 = new Plane(glm::vec4(0.0,0.0,-1.0,-3.5), plane_2_color, 0, 10.0);
+    //Plane* plane_3 = new Plane(glm::vec4(-1.0,0.0,-0.1,-3.0), plane_3_color, 0, 15.0);
+    //Plane* plane_4 = new Plane(glm::vec4(0.0,1.0,-0.1,-3.0), plane_4_color, 0, 10.0);
+    //Plane* plane_5 = new Plane(glm::vec4(0.0,-1.0,-0.1,-3.0), plane_5_color, 0, 15.0);
+    //glm::vec3 rayOrigin_original(0.0f, 0.0f, 1.0f); //note that moving forward in the z direction is actually backwards in relation to the ray we shoot, since it shoots in the negative direction
+    //std::vector<glm::vec4> light_sources_original;
+    //std::vector<glm::vec4> light_sources_colors;
+    //std::vector<glm::vec4> spotlight_positions;
+    //glm::vec3 rayDirection_original; //from eye to screen
+    //glm::vec4 ambientLight_original = glm::vec4(0.2,0.1,0.0,1.0);
+
+    //light_sources_original.push_back(glm::vec4(0.0,0.5,-1.0,1.0)); //spot light
+    //light_sources_colors.push_back(glm::vec4(0.3,0.9,0.2,1.0)); //spot light color
+    //spotlight_positions.push_back(glm::vec4(0.0,0.0,0.0,0.8)); //spotlight position
+
+    //light_sources_original.push_back(glm::vec4(0.5,0.0,-1.0,1.0)); //directional light
+    //light_sources_colors.push_back(glm::vec4(0.9,0.5,0.5,1.0)); //directional light color
+    //spotlight_positions.push_back(glm::vec4(0.0,0.0,0.0,0.9)); //do note that the 4th parameter is probably the cutoff angle: 0.6 * 255deg
+
+
+    //light_sources_original.push_back(glm::vec4(-0.4,-0.3,-1.0,1.0)); //spot light
+    //light_sources_colors.push_back(glm::vec4(0.2,0.5,0.7,1.0)); //spot light color
+    //spotlight_positions.push_back(glm::vec4(-0.2,0.0,0.0,0.7)); //do note that the 4th parameter is probably the cutoff angle: 0.6 * 255deg
+
+    //shapes.push_back(plane_1);
+    //shapes_reflecting_statuses.push_back(plane_1->get_reflecting_status());
+    //shapes.push_back(plane_2);
+    //shapes_reflecting_statuses.push_back(plane_2->get_reflecting_status());
+    //shapes.push_back(plane_3);
+    //shapes_reflecting_statuses.push_back(plane_3->get_reflecting_status());
+    //shapes.push_back(plane_4);
+    //shapes_reflecting_statuses.push_back(plane_4->get_reflecting_status());
+    //shapes.push_back(plane_5);
+    //shapes_reflecting_statuses.push_back(plane_5->get_reflecting_status());
+    //wtf is the last input line?
+    // i 0.7 0.8 0.3 1.0
+    // it doesnt belong to a light source
+
+    //SCENE 4
+
     std::vector<Shape_custom*> shapes;
     std::vector<int> shapes_reflecting_statuses;
     std::vector<float> distances; //this will include distance for each hit, -1 if non-existent
-    uint32_t sphere_2_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.6, 0.0, 0.8, 10.0), 1);
-    uint32_t sphere_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(1, 0, 0, 10.0), 1);
-    uint32_t plane_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.0, 1.0, 1.0, 10.0), 1);
+    
+    uint32_t Sphere_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.0,1.0,1.0,10.0), 1);
+    uint32_t Sphere_2_color = convert_vec4_rgba_to_uint32_t(glm::vec4(1.0,0.0,0.0,20.0), 1);
+    uint32_t Sphere_3_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.6,0.0,0.8,15.0), 1);
+    uint32_t Sphere_4_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.9,0.0,0.0,10.0), 1);
+    uint32_t Sphere_5_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.0,0.0,0.8,10.0), 1);
+    uint32_t plane_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.7,0.7,0.0,10.0), 1);
 
-    Sphere* sphere_1 = new Sphere(0.5, glm::vec3(-0.7, 0.7, -2.0), sphere_1_color,0);
-    Sphere* sphere_2 = new Sphere(0.5, glm::vec3(0.6, 0.5, -1.0), sphere_2_color,0);
-    Plane* plane_1 = new Plane(glm::vec4(0, -0.5, -1.0, -3.5), plane_1_color,0);
-    glm::vec3 rayOrigin_original(0.0f, 0.0f, 4.0f); //note that moving forward in the z direction is actually backwards in relation to the ray we shoot, since it shoots in the negative direction
+
+    Sphere* Sphere_1 = new Sphere(0.3,glm::vec3(0.0,-0.5,-1.0), Sphere_1_color, 0, 10.0);
+    Sphere* Sphere_2 = new Sphere(0.7,glm::vec3(-1.7,-0.7,-3.0), Sphere_2_color, 0, 20.0);
+    Sphere* Sphere_3 = new Sphere(2.5, glm::vec3(2.6,-1.5,-10.0 ), Sphere_3_color, 0, 15.0);
+    Sphere* Sphere_4 = new Sphere(1.5, glm::vec3(1.3,1.5,-7.0), Sphere_4_color, 0, 10.0);
+    Sphere* Sphere_5 = new Sphere(1.0, glm::vec3(-0.6,-0.5,-5.0), Sphere_5_color, 0, 10.0);
+    Plane* plane_1 = new Plane(glm::vec4(0.0,-1.0,-1.0,-8.5), plane_1_color, 0, 10.0);
+
+    glm::vec3 rayOrigin_original(0.0,0.0,3.0); //note that moving forward in the z direction is actually backwards in relation to the ray we shoot, since it shoots in the negative direction
     std::vector<glm::vec4> light_sources_original;
     std::vector<glm::vec4> light_sources_colors;
     std::vector<glm::vec4> spotlight_positions;
     glm::vec3 rayDirection_original; //from eye to screen
-    glm::vec4 ambientLight_original = glm::vec4(0.1, 0.2, 0.3, 1.0);
+    glm::vec4 ambientLight_original = glm::vec4(0.2,0.2,0.3,1.0);
 
-    light_sources_original.push_back(glm::vec4(0.5, 0.0, -1.0, 1.0)); //spot light
-    light_sources_colors.push_back(glm::vec4(0.2, 0.5, 0.7, 1.0)); //spot light color
+    light_sources_original.push_back(glm::vec4(1.5,0.9,-1.0,1.0)); //spot light
+    light_sources_colors.push_back(glm::vec4(0.2,0.5,0.7,1.0)); //spot light color
+    spotlight_positions.push_back(glm::vec4(-2.0,-1.0,3.0,0.6)); //spotlight position
+
+    light_sources_original.push_back(glm::vec4(0.0,-0.7,-1.0,0.0)); //directional light
+    light_sources_colors.push_back(glm::vec4(0.9,0.5,0.0,1.0)); //directional light color
 
 
-    light_sources_original.push_back(glm::vec4(0.0, 0.5, -1.0, 0.0)); //directional light
-    light_sources_colors.push_back(glm::vec4(0.7, 0.5, 0.0, 1.0)); //directional light color
+    shapes.push_back(Sphere_1);
+    shapes_reflecting_statuses.push_back(Sphere_1->get_reflecting_status());
 
-    spotlight_positions.push_back(glm::vec4(2.0, 1.0, 3.0, 0.6)); //do note that the 4th parameter is probably the cutoff angle: 0.6 * 255deg
+    //shapes.push_back(Sphere_2);
+    //shapes_reflecting_statuses.push_back(Sphere_2->get_reflecting_status());
+    //shapes.push_back(Sphere_3);
+    //shapes_reflecting_statuses.push_back(Sphere_3->get_reflecting_status());
+    //shapes.push_back(Sphere_4);
+    //shapes_reflecting_statuses.push_back(Sphere_4->get_reflecting_status());
 
-    shapes.push_back(sphere_1);
-    shapes_reflecting_statuses.push_back(sphere_1->get_reflecting_status());
-    shapes.push_back(sphere_2);
-    shapes_reflecting_statuses.push_back(sphere_2->get_reflecting_status());
+    //shapes.push_back(Sphere_5);
+    //shapes_reflecting_statuses.push_back(Sphere_5->get_reflecting_status());
     shapes.push_back(plane_1);
     shapes_reflecting_statuses.push_back(plane_1->get_reflecting_status());
-    
-
-    //for (int i = 0; i < shapes.size(); i++) 
-    //{
-    //    distances.push_back(-1); //temporary distance
-    //}
-
 
 
     uint32_t* image_data = new uint32_t[width * height]; //right-to-left -> 2bytes(R) -> 2bytes(G) -> 2bytes(B) -> 2bytes(alpha) -> 0x meaning we write in hexadecimal

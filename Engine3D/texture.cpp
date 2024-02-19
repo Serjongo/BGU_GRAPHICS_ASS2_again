@@ -34,8 +34,8 @@ uint32_t convert_vec4_rgba_to_uint32_t(glm::vec4 color, int input_as_decimal) //
     if (input_as_decimal == 1) // meaning we get input as 0-1.0
     {
         unsigned char r = clamp(color.x * 255);
-        unsigned char g = color.y * 255;
-        unsigned char b = color.z * 255;
+        unsigned char g = clamp(color.y * 255);
+        unsigned char b = clamp(color.z * 255);
         unsigned char alpha = 255;
         uint32_t final_result = r | g << 8 | b << 16 | alpha << 24;
         return final_result;
@@ -54,7 +54,7 @@ uint32_t convert_vec4_rgba_to_uint32_t(glm::vec4 color, int input_as_decimal) //
 glm::vec4 convert_uint32_t_to_vec4_rgba(uint32_t color, int output_as_decimal) // 1 means return decimal percentage of 255 (0.0-1.0), everything else means 0-255
 {
     uint32_t temp_color = color;
-    unsigned char r = (unsigned char)color & 0x000000ff;
+    unsigned char r = (unsigned char)(color & 0x000000ff);
     unsigned char g = (unsigned char)((color & 0x0000ff00) >> 8);
     unsigned char b = (unsigned char)((color & 0x00ff0000) >> 16);
     unsigned char alpha = (unsigned char)((color & 0xff000000) >> 24);
@@ -94,10 +94,10 @@ glm::vec4 multiply_vector_by_vec_scalars(glm::vec4 input, glm::vec4 scalars) //i
 
 
 //for multiplying our rgba value by a decimal without fudging up our channels
-uint32_t rgba_uint32_t_scalar_multiplication(uint32_t original_color, float decimal_percentage_scalar) //decimal percentage must be between 0-1, I'm not checking for correctness because this is for internal use only
-{
-    return convert_vec4_rgba_to_uint32_t(multiply_vector_by_vec_scalars(convert_uint32_t_to_vec4_rgba(original_color, 0), glm::vec4(decimal_percentage_scalar)), 0);
-}
+//uint32_t rgba_uint32_t_scalar_multiplication(uint32_t original_color, float decimal_percentage_scalar) //decimal percentage must be between 0-1, I'm not checking for correctness because this is for internal use only
+//{
+//    return convert_vec4_rgba_to_uint32_t(multiply_vector_by_vec_scalars(convert_uint32_t_to_vec4_rgba(original_color, 0), glm::vec4(decimal_percentage_scalar)), 0);
+//}
 
 
 //algebraic functions for vectors
@@ -541,7 +541,7 @@ uint32_t PerPixelLight(int we_are_a_spotlight, glm::vec3 spotlight_pos, std::vec
     //-------------------
 
     //DOING PHONG
-    glm::vec4 diffusion_product = multiply_vector_by_vec_scalars(light_color_of_source, glm::vec4(glm::vec3(diffusion_strength), 1.0));
+    glm::vec4 diffusion_product = glm::vec4(clamp(light_color_of_source.x * 255 * diffusion_strength), clamp(light_color_of_source.y * 255 * diffusion_strength), clamp(light_color_of_source.z * 255 * diffusion_strength), 255);
     glm::vec4 ambient_product = ambient_light;
 
 
@@ -561,7 +561,7 @@ uint32_t PerPixelLight(int we_are_a_spotlight, glm::vec3 spotlight_pos, std::vec
     }
 
 
-    glm::vec4 pixel_color_vector = multiply_vector_by_vec_scalars(original_object_color_values, (diffusion_product)); // DIFFUE DOES OK, SPECULAR EH, SUMMED UP THEY FUCK ME UP
+    glm::vec4 pixel_color_vector = multiply_vector_by_vec_scalars(original_object_color_percentage, (diffusion_product)); // DIFFUE DOES OK, SPECULAR EH, SUMMED UP THEY FUCK ME UP
 
     if (pixel_color_vector.x + specular_product.x > 255)
     {
@@ -601,7 +601,7 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
     //SETTING UP INFRASTRUCTURE FOR REFLECTIONS-------------------
     //default values, may change if we hit a reflective surface
     glm::vec3 rayOrigin = eye; 
-    glm::vec3 rayOrigin_before_initial_reflect = rayOrigin; //not used currently;
+    glm::vec3 rayOrigin_before_initial_reflect = eye; //not used currently;
     glm::vec3 rayDirection = from_eye_direction;
     int relevant_reflection_shape_index = -1;
     glm::vec3 normal_on_mirror;
@@ -640,7 +640,7 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
     }
     
     //170224 - inserted post-reflection add, only deals with a situation where we've hit a mirror. do note that in perPixel we cared about the color, here we care about the distance, the rest should be taken care of
-    if (shapes_input[relevant_shape_index]->get_reflecting_status() == 1)
+    if (relevant_shape_index != -1 && shapes_input[relevant_shape_index]->get_reflecting_status() == 1)
     {
         std::vector<float> reflections_distances;
         
@@ -708,7 +708,7 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
         glm::vec3 normalized_light_ray;
 
         //170224 - added reflection status, I'll have to work with reflected light here
-        if(shapes_input[relevant_shape_index]->get_reflecting_status() == 1)
+        if(relevant_shape_index != -1 && shapes_input[relevant_shape_index]->get_reflecting_status() == 1)
         {
             
             glm::vec3 reflected_light_ray = glm::reflect(light_ray, normal_on_mirror);
@@ -745,9 +745,17 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
             for (int i = 0; i < shapes_input.size(); i++) //originally a for each loop, moved from it to accommodate for filtering out an indexed shape 
             {
 
-                if (i != relevant_shape_index && i != relevant_reflection_shape_index && relevant_shape_index != -1) //don't check intersection with myself. ADDITIONALLY: the i of the distances may be in inverse to the shapes vector, may have to switch them around. 
+                if (((i != relevant_shape_index && i != relevant_reflection_shape_index) || (shapes_input.size() == 1)) && relevant_shape_index != -1) //don't check intersection with myself. ADDITIONALLY: the i of the distances may be in inverse to the shapes vector, may have to switch them around. 
                 {
-                    float distance_to_intersection = shapes_input[i]->intersection(hitpoint, -normalized_light_ray, pixel_color); //notice that light ray is reversed, otherwise i get a negative direction in intersection and dont return it
+                    float distance_to_intersection;
+                    if(shapes_input.size() == 1)
+                    {
+                        distance_to_intersection = shortest_distance;
+                    }
+                    else
+                    {
+                        distance_to_intersection = shapes_input[i]->intersection(hitpoint, -normalized_light_ray, pixel_color); //notice that light ray is reversed, otherwise i get a negative direction in intersection and dont return it
+                    }
                     if (distance_to_intersection < 0 || distance_to_intersection >= shortest_distance)
                     {
                         potential_intersections--;
@@ -762,6 +770,9 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
                                 pixel_color_result = pixel_color_result + 1;
                                 pixel_color_result = pixel_color_result - 1;
                             }
+
+
+                            
 
                             //POTENTIAL OVERFLOW PROBLEM$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
                             uint32_t direct_directional_lighting_result;
@@ -782,6 +793,18 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
 
 
                             pixel_color_result = convert_vec4_rgba_to_uint32_t(final_pixel_color_values, 0);
+
+                            if (shapes_input[relevant_shape_index]->getColor(glm::vec3(0)) == convert_vec4_rgba_to_uint32_t(glm::vec4(0.0, 0.0, 0.8, 10.0), 1))
+                            {
+                                pixel_color_result = pixel_color_result + 1;
+                                pixel_color_result = pixel_color_result - 1;
+                                glm::vec4 color_difference = glm::vec4(convert_uint32_t_to_vec4_rgba(pixel_color, 0) - convert_uint32_t_to_vec4_rgba(pixel_color_result, 0));
+                                if (color_difference != glm::vec4(0))
+                                {
+                                    //std::cout << color_difference.x << ", " << color_difference.y << ", " << color_difference.z << ", " << color_difference.w << std::endl; 
+                                }
+                                
+                            }
                             //pixel_color_result += PerPixelLight(0,glm::vec3 (0,0,0),light_sources_directions,image_data_input, original_object_color,eye,from_eye_direction,distances_input,shapes_input,pixel_color,spotlight_positions,ambient_light,relevant_shape_index,hitpoint,light_ray,shortest_distance,spotlight_counter,directional_light_color); //ambient_lighting argument means color
                         }
                     }
@@ -832,7 +855,7 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
             //
 
             //DO NOTE: THIS DOES NOT MAKE SENSE IN ITS CURRENT CURRENT FORM, THE COMPARISON SHOULD GO THE OTHER WAY, OUR COS(a) SHOULD BE SMALLER THAN THE CUTOFF ANGLE, FOR SOME REASON IT PRODUCES THE INVERSE OF THE RESULTS, THIS DOES NOT MAKE ANY SENSE.
-            if (glm::dot(light_to_surface_vec, ORIGINAL_light_ray) / (glm::length(light_to_surface_vec) * glm::length(ORIGINAL_light_ray)) > spotlight_positions[spotlight_counter].w) //if our angle is smaller than the cutoff angle, light could theoretically reach us
+            if (glm::dot(glm::normalize(light_to_surface_vec), glm::normalize(light_ray)) > spotlight_positions[spotlight_counter].w) //if our angle is smaller than the cutoff angle, light could theoretically reach us
             {
 
                 // now that we've passed the first "obstacle" (if it's concrete then we're done and we just keep on going, but not for mirrors), we may fire the actual reflected ray.
@@ -863,9 +886,18 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
                 for (int i = 0; i < shapes_input.size(); i++) //originally a for each loop, moved from it to accommodate for filtering out an indexed shape 
                 {
                     //if this is not a reflection, relevant_reflection_shape will be -1 and won't be relevant either way
-                    if ((i != relevant_shape_index) && (i != relevant_reflection_shape_index)) //don't check intersection with myself. ADDITIONALLY: the i of the distances may be in inverse to the shapes vector, may have to switch them around. 
+                    if (((i != relevant_shape_index && i != relevant_reflection_shape_index) || (shapes_input.size() == 1)) && relevant_shape_index != -1) //don't check intersection with myself. ADDITIONALLY: the i of the distances may be in inverse to the shapes vector, may have to switch them around. 
                     {
-                        float distance_to_intersection = shapes_input[i]->intersection(hitpoint, calculate_vector_direction(hitpoint, spotlight_pos), pixel_color);
+                        float distance_to_intersection;
+                        if (shapes_input.size() == 1)
+                        {
+                            distance_to_intersection = shortest_distance;
+                        }
+                        else 
+                        {
+                            distance_to_intersection = shapes_input[i]->intersection(hitpoint, calculate_vector_direction(hitpoint, spotlight_pos), pixel_color);
+                        }
+
                         if (distance_to_intersection < 0 || distance_to_intersection >= shortest_distance)
                         {
                             potential_intersections--;
@@ -884,11 +916,15 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
                                 //POTENTIAL OVERFLOW PROBLEM$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
                                 uint32_t spotlight_light_result;
 
-                                spotlight_light_result = PerPixelLight(1, spotlight_pos, light_sources_directions, image_data_input, original_object_color, rayOrigin, rayDirection, distances_input, shapes_input, pixel_color, spotlight_positions, ambient_light,relevant_shape_index, relevant_reflection_shape_index , hitpoint, light_ray, shortest_distance, spotlight_counter, light_sources_colors[light_source_index]); //ambient_lighting argument means color
+                                spotlight_light_result = PerPixelLight(1, spotlight_pos, light_sources_directions, image_data_input, original_object_color, rayOrigin, rayDirection, distances_input, shapes_input, pixel_color, spotlight_positions, ambient_light,relevant_shape_index, relevant_reflection_shape_index , hitpoint, light_to_surface_vec, shortest_distance, spotlight_counter, light_sources_colors[light_source_index]); //ambient_lighting argument means color
                                 //spotlight_light_result = 0;
 
                                 //testing
                                 if (spotlight_light_result != 0xff000000 && shapes_input[relevant_shape_index]->get_reflecting_status() == 1)
+                                {
+                                    //std::cout << "I added light to reflected surface"; 
+                                }
+                                if (spotlight_light_result == 0xff000000 && shapes_input[relevant_shape_index]->getColor(glm::vec3(0)) != convert_vec4_rgba_to_uint32_t(glm::vec4(0.0, 1.0, 1.0, 10.0), 1))
                                 {
                                     //std::cout << "I added light to reflected surface"; 
                                 }
@@ -1068,38 +1104,38 @@ Texture::Texture(int width, int height) //added by me
 {
 
     //SCENE 5
-    //std::vector<Shape_custom*> shapes;
-    //std::vector<int> shapes_reflecting_statuses;
-    //std::vector<float> distances; //this will include distance for each hit, -1 if non-existent
-    //uint32_t sphere_2_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.6, 0.0, 0.8, 10.0), 1);
-    //uint32_t sphere_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(1, 0, 0, 10.0), 1);
-    //uint32_t plane_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.0, 1.0, 1.0, 10.0), 1);
+    std::vector<Shape_custom*> shapes;
+    std::vector<int> shapes_reflecting_statuses;
+    std::vector<float> distances; //this will include distance for each hit, -1 if non-existent
+    uint32_t sphere_2_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.6, 0.0, 0.8, 10.0), 1);
+    uint32_t sphere_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(1, 0, 0, 10.0), 1);
+    uint32_t plane_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.0, 1.0, 1.0, 10.0), 1);
 
-    //Sphere* sphere_1 = new Sphere(0.5, glm::vec3(-0.7, 0.7, -2.0), sphere_1_color,0);
-    //Sphere* sphere_2 = new Sphere(0.5, glm::vec3(0.6, 0.5, -1.0), sphere_2_color,0);
-    //Plane* plane_1 = new Plane(glm::vec4(0, -0.5, -1.0, -3.5), plane_1_color,1);
-    //glm::vec3 rayOrigin_original(0.0f, 0.0f, 4.0f); //note that moving forward in the z direction is actually backwards in relation to the ray we shoot, since it shoots in the negative direction
-    //std::vector<glm::vec4> light_sources_original;
-    //std::vector<glm::vec4> light_sources_colors;
-    //std::vector<glm::vec4> spotlight_positions;
-    //glm::vec3 rayDirection_original; //from eye to screen
-    //glm::vec4 ambientLight_original = glm::vec4(0.1, 0.2, 0.3, 1.0);
+    Sphere* sphere_1 = new Sphere(0.5, glm::vec3(-0.7, 0.7, -2.0), sphere_1_color,0);
+    Sphere* sphere_2 = new Sphere(0.5, glm::vec3(0.6, 0.5, -1.0), sphere_2_color,0);
+    Plane* plane_1 = new Plane(glm::vec4(0, -0.5, -1.0, -3.5), plane_1_color,1);
+    glm::vec3 rayOrigin_original(0.0f, 0.0f, 4.0f); //note that moving forward in the z direction is actually backwards in relation to the ray we shoot, since it shoots in the negative direction
+    std::vector<glm::vec4> light_sources_original;
+    std::vector<glm::vec4> light_sources_colors;
+    std::vector<glm::vec4> spotlight_positions;
+    glm::vec3 rayDirection_original; //from eye to screen
+    glm::vec4 ambientLight_original = glm::vec4(0.1, 0.2, 0.3, 1.0);
 
-    //light_sources_original.push_back(glm::vec4(0.5, 0.0, -1.0, 1.0)); //spot light
-    //light_sources_colors.push_back(glm::vec4(0.2, 0.5, 0.7, 1.0)); //spot light color
+    light_sources_original.push_back(glm::vec4(0.5, 0.0, -1.0, 1.0)); //spot light
+    light_sources_colors.push_back(glm::vec4(0.2, 0.5, 0.7, 1.0)); //spot light color
 
 
-    //light_sources_original.push_back(glm::vec4(0.0, 0.5, -1.0, 0.0)); //directional light
-    //light_sources_colors.push_back(glm::vec4(0.7, 0.5, 0.0, 1.0)); //directional light color
+    light_sources_original.push_back(glm::vec4(0.0, 0.5, -1.0, 0.0)); //directional light
+    light_sources_colors.push_back(glm::vec4(0.7, 0.5, 0.0, 1.0)); //directional light color
 
-    //spotlight_positions.push_back(glm::vec4(2.0, 1.0, 3.0, 0.6)); //do note that the 4th parameter is probably the cutoff angle: 0.6 * 255deg
+    spotlight_positions.push_back(glm::vec4(2.0, 1.0, 3.0, 0.6)); //do note that the 4th parameter is probably the cutoff angle: 0.6 * 255deg
 
-    //shapes.push_back(sphere_1);
-    //shapes_reflecting_statuses.push_back(sphere_1->get_reflecting_status());
-    //shapes.push_back(sphere_2);
-    //shapes_reflecting_statuses.push_back(sphere_2->get_reflecting_status());
-    //shapes.push_back(plane_1);
-    //shapes_reflecting_statuses.push_back(plane_1->get_reflecting_status());
+    shapes.push_back(sphere_1);
+    shapes_reflecting_statuses.push_back(sphere_1->get_reflecting_status());
+    shapes.push_back(sphere_2);
+    shapes_reflecting_statuses.push_back(sphere_2->get_reflecting_status());
+    shapes.push_back(plane_1);
+    shapes_reflecting_statuses.push_back(plane_1->get_reflecting_status());
 
     //SCENE 1
 
@@ -1122,12 +1158,10 @@ Texture::Texture(int width, int height) //added by me
 
     //light_sources_original.push_back(glm::vec4(0.5, 0.0, -1.0, 1.0)); //spot light
     //light_sources_colors.push_back(glm::vec4(0.2, 0.5, 0.7, 1.0)); //spot light color
-
+    //spotlight_positions.push_back(glm::vec4(2.0, 1.0, 3.0, 0.6)); //do note that the 4th parameter is probably the cutoff angle: 0.6 * 255deg
 
     //light_sources_original.push_back(glm::vec4(0.0, 0.5, -1.0, 0.0)); //directional light
     //light_sources_colors.push_back(glm::vec4(0.7, 0.5, 0.0, 1.0)); //directional light color
-
-    //spotlight_positions.push_back(glm::vec4(2.0, 1.0, 3.0, 0.6)); //do note that the 4th parameter is probably the cutoff angle: 0.6 * 255deg
 
     //shapes.push_back(sphere_1);
     //shapes_reflecting_statuses.push_back(sphere_1->get_reflecting_status());
@@ -1183,48 +1217,52 @@ Texture::Texture(int width, int height) //added by me
     //shapes_reflecting_statuses.push_back(plane_4->get_reflecting_status());
     //shapes.push_back(plane_5);
     //shapes_reflecting_statuses.push_back(plane_5->get_reflecting_status());
+    // 
+    // 
     //wtf is the last input line?
     // i 0.7 0.8 0.3 1.0
     // it doesnt belong to a light source
 
     //SCENE 4
 
-    std::vector<Shape_custom*> shapes;
-    std::vector<int> shapes_reflecting_statuses;
-    std::vector<float> distances; //this will include distance for each hit, -1 if non-existent
-    
-    uint32_t Sphere_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.0,1.0,1.0,10.0), 1);
-    uint32_t Sphere_2_color = convert_vec4_rgba_to_uint32_t(glm::vec4(1.0,0.0,0.0,20.0), 1);
-    uint32_t Sphere_3_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.6,0.0,0.8,15.0), 1);
-    uint32_t Sphere_4_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.9,0.0,0.0,10.0), 1);
-    uint32_t Sphere_5_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.0,0.0,0.8,10.0), 1);
-    uint32_t plane_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.7,0.7,0.0,10.0), 1);
+    //std::vector<Shape_custom*> shapes;
+    //std::vector<int> shapes_reflecting_statuses;
+    //std::vector<float> distances; //this will include distance for each hit, -1 if non-existent
+    //
+    //uint32_t Sphere_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.0,1.0,1.0,10.0), 1);
+    //uint32_t Sphere_2_color = convert_vec4_rgba_to_uint32_t(glm::vec4(1.0,0.0,0.0,20.0), 1);
+    //uint32_t Sphere_3_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.6,0.0,0.8,15.0), 1);
+    //uint32_t Sphere_4_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.9,0.0,0.0,10.0), 1);
+    //uint32_t Sphere_5_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.0,0.0,0.8,10.0), 1);
+    //uint32_t plane_1_color = convert_vec4_rgba_to_uint32_t(glm::vec4(0.7,0.7,0.0,10.0), 1);
 
 
-    Sphere* Sphere_1 = new Sphere(0.3,glm::vec3(0.0,-0.5,-1.0), Sphere_1_color, 0, 10.0);
-    Sphere* Sphere_2 = new Sphere(0.7,glm::vec3(-1.7,-0.7,-3.0), Sphere_2_color, 0, 20.0);
-    Sphere* Sphere_3 = new Sphere(2.5, glm::vec3(2.6,-1.5,-10.0 ), Sphere_3_color, 0, 15.0);
-    Sphere* Sphere_4 = new Sphere(1.5, glm::vec3(1.3,1.5,-7.0), Sphere_4_color, 0, 10.0);
-    Sphere* Sphere_5 = new Sphere(1.0, glm::vec3(-0.6,-0.5,-5.0), Sphere_5_color, 0, 10.0);
-    Plane* plane_1 = new Plane(glm::vec4(0.0,-1.0,-1.0,-8.5), plane_1_color, 0, 10.0);
+    //Sphere* Sphere_1 = new Sphere(0.3, glm::vec3(0.0, -0.5, -1.0), Sphere_1_color, 0, 10.0);
+    //Sphere* Sphere_2 = new Sphere(0.7,glm::vec3(-1.7,-0.7,-3.0), Sphere_2_color, 0, 20.0);
+    //Sphere* Sphere_3 = new Sphere(2.5, glm::vec3(2.6,-1.5,-10.0 ), Sphere_3_color, 0, 15.0);
+    //Sphere* Sphere_4 = new Sphere(1.5, glm::vec3(1.3,1.5,-7.0), Sphere_4_color, 0, 10.0);
+    //Sphere* Sphere_5 = new Sphere(1.0, glm::vec3(-0.6,-0.5,-5.0), Sphere_5_color, 0, 10.0);
+    //Plane* plane_1 = new Plane(glm::vec4(0.0,-1.0,-1.0,-8.5), plane_1_color, 0, 10.0);
 
-    glm::vec3 rayOrigin_original(0.0,0.0,3.0); //note that moving forward in the z direction is actually backwards in relation to the ray we shoot, since it shoots in the negative direction
-    std::vector<glm::vec4> light_sources_original;
-    std::vector<glm::vec4> light_sources_colors;
-    std::vector<glm::vec4> spotlight_positions;
-    glm::vec3 rayDirection_original; //from eye to screen
-    glm::vec4 ambientLight_original = glm::vec4(0.2,0.2,0.3,1.0);
-
-    light_sources_original.push_back(glm::vec4(1.5,0.9,-1.0,1.0)); //spot light
-    light_sources_colors.push_back(glm::vec4(0.2,0.5,0.7,1.0)); //spot light color
-    spotlight_positions.push_back(glm::vec4(-2.0,-1.0,3.0,0.6)); //spotlight position
-
-    light_sources_original.push_back(glm::vec4(0.0,-0.7,-1.0,0.0)); //directional light
-    light_sources_colors.push_back(glm::vec4(0.9,0.5,0.0,1.0)); //directional light color
+    //glm::vec3 rayOrigin_original(0.0,0.0,3.0); //note that moving forward in the z direction is actually backwards in relation to the ray we shoot, since it shoots in the negative direction
+    //std::vector<glm::vec4> light_sources_original;
+    //std::vector<glm::vec4> light_sources_colors;
+    //std::vector<glm::vec4> spotlight_positions;
+    //glm::vec3 rayDirection_original; //from eye to screen
+    //glm::vec4 ambientLight_original = glm::vec4(0.2,0.2,0.3,1.0);
 
 
-    shapes.push_back(Sphere_1);
-    shapes_reflecting_statuses.push_back(Sphere_1->get_reflecting_status());
+    //light_sources_original.push_back(glm::vec4(0.0, -0.7, -1.0, 0.0)); //directional light
+    //light_sources_colors.push_back(glm::vec4(0.9, 0.5, 0.0, 1.0)); //directional light color
+
+
+    //light_sources_original.push_back(glm::vec4(1.5, 0.9, -1.0, 1.0)); //spot light
+    //light_sources_colors.push_back(glm::vec4(1.0, 1.0, 1.0, 1.0)); //spot light color
+    //spotlight_positions.push_back(glm::vec4(-2.0, -1.0, 3.0, 0.6)); //spotlight position
+
+
+    //shapes.push_back(Sphere_1);
+    //shapes_reflecting_statuses.push_back(Sphere_1->get_reflecting_status());
 
     //shapes.push_back(Sphere_2);
     //shapes_reflecting_statuses.push_back(Sphere_2->get_reflecting_status());
@@ -1235,8 +1273,9 @@ Texture::Texture(int width, int height) //added by me
 
     //shapes.push_back(Sphere_5);
     //shapes_reflecting_statuses.push_back(Sphere_5->get_reflecting_status());
-    shapes.push_back(plane_1);
-    shapes_reflecting_statuses.push_back(plane_1->get_reflecting_status());
+    //shapes.push_back(plane_1);
+    //shapes_reflecting_statuses.push_back(plane_1->get_reflecting_status());
+
 
 
     uint32_t* image_data = new uint32_t[width * height]; //right-to-left -> 2bytes(R) -> 2bytes(G) -> 2bytes(B) -> 2bytes(alpha) -> 0x meaning we write in hexadecimal

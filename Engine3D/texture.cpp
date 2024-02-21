@@ -502,7 +502,7 @@ public:
 };
 
 //recursive_ray_cast
-uint32_t do_the_intersection_thing_again_re_check(glm::vec3& rayOrigin, glm::vec3& rayDirection, std::vector<float> &distances, std::vector<float> &reflections_distances,int &relevant_re_reflection_shape_index, int &relevant_reflection_shape_index, std::vector<Shape_custom*> shapes_input, uint32_t& pixel_value, float& shortest_distance, int &prev_reflection_shape_index, int &prev_prev_relevant_shape_index)
+uint32_t do_the_intersection_thing_again_re_check(glm::vec3& rayOrigin, glm::vec3& rayDirection, std::vector<float> &distances, std::vector<float> &reflections_distances,int &relevant_re_reflection_shape_index, int &relevant_reflection_shape_index, std::vector<Shape_custom*> shapes_input, uint32_t& pixel_value, float& shortest_distance, int &prev_reflection_shape_index)
 {
     //find the reflected shape's color
     //checking for reflections now - we only do 1 hop!
@@ -569,6 +569,8 @@ uint32_t do_the_intersection_thing_again_re_check(glm::vec3& rayOrigin, glm::vec
     if (shortest_reflection_distance == INT_MAX || shortest_reflection_distance > 100) //meaning the reflection doesnt hit anything, so we're technically finished, or it goes so far that it doesn't matter by that point
     {
         pixel_value = 0;
+        relevant_reflection_shape_index = -1;
+        shortest_distance = -1;
         //doing dumb stuff to not get stuck and avoid adding more pointless variables
     }
     else //meaning we've hit something, don't care what it is - (I mean we kinda do, but we'll just run again if the result doesn't satisfy - until it does)
@@ -734,8 +736,8 @@ uint32_t PerPixelLight(int we_are_a_spotlight, glm::vec3 spotlight_pos, std::vec
 uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::vector<glm::vec4> light_sources_colors, uint32_t* image_data_input, uint32_t original_object_color, glm::vec3 eye, glm::vec3 from_eye_direction, std::vector<float>& distances_input, std::vector<Shape_custom*>& shapes_input, uint32_t pixel_color, std::vector<glm::vec4>& spotlight_positions, glm::vec4 ambient_light)
 {
     uint32_t pixel_color_result = pixel_color; //we will be adding values on top of it with each lighting source
-
-    int light_source_reflection = 0; //turned off by default, produces the results as asked by the assignment - (ALTHOUGH MAKES ZERO SENSE PHYSICALLY)
+    uint32_t pixel_value = 0;
+    int light_source_reflection = 0; //turned off by default, produces the results as asked by the assignment - (although ligh ray reflection does make more sense)
 
 
     //SETTING UP INFRASTRUCTURE FOR REFLECTIONS-------------------
@@ -827,8 +829,69 @@ uint32_t PerPixelShadow(std::vector<glm::vec4> light_sources_directions, std::ve
             }
             else //meaning we've hit something, don't care what it is - since we have no recursion currently
             {
-                //pixel_value = shapes_input[relevant_shape_index]->getColor(calculate_hitpoint_from_distance(rayOrigin_on_mirror, rayDirection_from_mirror, shortest_distance));
 
+                //pixel_value = shapes_input[relevant_reflection_shape_index]->getColor(calculate_hitpoint_from_distance(rayOrigin_on_mirror, rayDirection_from_mirror, shortest_distance));
+
+                ////OH WE CARE NOW!
+                if (shapes_input[relevant_reflection_shape_index]->get_reflecting_status() != 1) //meaning it's a solid object
+                {
+                    pixel_value = shapes_input[relevant_reflection_shape_index]->getColor(calculate_hitpoint_from_distance(rayOrigin_on_mirror, rayDirection_from_mirror, shortest_distance));
+                }
+                else if (shapes_input[relevant_reflection_shape_index]->get_reflecting_status() == 1) //mirror again
+                {
+
+                    //glm::vec3 rayOrigin_on_mirror = calculate_hitpoint_from_distance(rayOrigin, rayDirection, distances[relevant_shape_index]);
+                    //glm::vec3 normal_on_mirror = shapes_input[relevant_shape_index]->calculate_normal_direction(rayOrigin_on_mirror);
+                    //glm::vec3 rayDirection_from_mirror = glm::reflect(rayDirection, normal_on_mirror); //may need to negate the normal on mirror
+
+                    //INSERT REFLECTION CODE HERE AGAIN, AND BREAK IT INTO A FUNCTION WHICH WILL CONTINUE BY ITSELF
+                    //rayOrigin, rayDirection, & distances, & reflections_distances, relevant_shape_index, & shapes_input, pixel_value, shortest_distance
+                    int iterations = 1; //i did one reflection previously, finishing up the rest
+                    pixel_value = 1;
+                    int prev_relevant_shape_index = relevant_shape_index;
+                    int relevant_re_reflection_shape_index = relevant_reflection_shape_index;
+
+                    while (pixel_value != 0 && shapes_input[relevant_re_reflection_shape_index]->get_reflecting_status() == 1 && iterations < 5)
+                    {
+                        rayOrigin_on_mirror = calculate_hitpoint_from_distance(rayOrigin_on_mirror, rayDirection_from_mirror, shortest_distance);
+                        normal_on_mirror = shapes_input[relevant_reflection_shape_index]->calculate_normal_direction(rayOrigin_on_mirror);
+                        rayOrigin = rayOrigin_on_mirror;
+                        
+                        //if(shortest_distance < 0)
+                        //{
+                        //    normal_on_mirror = -normal_on_mirror;
+                        //}
+
+                        rayDirection_from_mirror = glm::reflect(rayDirection_from_mirror, normal_on_mirror); //from original mirror to new one
+                        rayDirection = rayDirection_from_mirror;
+                        //int previous_relevant_reflection_shape_index = relevant_reflection_shape_index;
+                        uint32_t next_object_color = do_the_intersection_thing_again_re_check(rayOrigin_on_mirror, rayDirection_from_mirror, distances_input, reflections_distances, relevant_re_reflection_shape_index, relevant_reflection_shape_index, shapes_input, pixel_value, shortest_distance, prev_relevant_shape_index);
+                        original_object_color = next_object_color;
+                        iterations++;
+
+                    }
+                    if (iterations >= 5)
+                    {
+                        original_object_color = 0;
+                        shortest_distance = -1;
+                        relevant_shape_index = -1;
+                        relevant_reflection_shape_index = -1;
+
+                    }
+                    else 
+                    {
+                        relevant_shape_index = prev_relevant_shape_index;
+                        relevant_reflection_shape_index = relevant_re_reflection_shape_index;
+                        //relevant_reflection_shape_index = relevant_re_reflection_shape_index;
+                        //relevant_shape_index = relevant_reflection_shape_index;
+                        
+                    }
+
+                }
+                else if ((shapes_input[relevant_reflection_shape_index]->get_transparency_status() == 1)) //meaning it's a transparent object - NOT DEALING WITH IT FOR NOW
+                {
+                    //NOT YET WORRYING ABOUT THIS ONE
+                }
             }
 
 
@@ -1161,7 +1224,7 @@ uint32_t PerPixel(glm::vec2 coord, glm::vec3 rayDirection, std::vector<Shape_cus
     // a+bt - ray formula. a = ray origin, b = ray direction , t = hit distance
 
     //------------TEMPORARY VALUES, WILL LIKELY CHANGE------------------
-
+    std::vector<float> original_distances;
     //glm::vec3 rayDirection(coord.x, coord.y, -rayOrigin.z);
     float radius = 0.5f;
     uint32_t pixel_value = 0; // this will change as it goes through more processes
@@ -1170,11 +1233,14 @@ uint32_t PerPixel(glm::vec2 coord, glm::vec3 rayDirection, std::vector<Shape_cus
     {
 
         distances.push_back(shape->intersection(rayOrigin, rayDirection, pixel_value));
+        original_distances.push_back(shape->intersection(rayOrigin, rayDirection, pixel_value));
         
         //i--;
 
     }
     
+    
+
 
         
 
@@ -1260,10 +1326,10 @@ uint32_t PerPixel(glm::vec2 coord, glm::vec3 rayDirection, std::vector<Shape_cus
                     //INSERT REFLECTION CODE HERE AGAIN, AND BREAK IT INTO A FUNCTION WHICH WILL CONTINUE BY ITSELF
                     //rayOrigin, rayDirection, & distances, & reflections_distances, relevant_shape_index, & shapes_input, pixel_value, shortest_distance
                     int iterations = 1; //i did one reflection previously, finishing up the rest
-                    int relevant_re_reflection_shape_index = relevant_reflection_shape_index;
                     pixel_value = 1;
                     int prev_relevant_shape_index = relevant_shape_index;
-                    int prev_prev_relevant_shape_index = relevant_shape_index; //for 3 collision in a tight spot
+                    int relevant_re_reflection_shape_index = relevant_reflection_shape_index;
+                    //int prev_prev_relevant_shape_index = relevant_shape_index; //for 3 collision in a tight spot
 
                     while (pixel_value != 0 && shapes_input[relevant_re_reflection_shape_index]->get_reflecting_status() == 1 && iterations < 5)
                     {
@@ -1276,7 +1342,7 @@ uint32_t PerPixel(glm::vec2 coord, glm::vec3 rayDirection, std::vector<Shape_cus
                         
                         rayDirection_from_mirror = glm::reflect(rayDirection_from_mirror, normal_on_mirror); //from original mirror to new one
                         //int previous_relevant_reflection_shape_index = relevant_reflection_shape_index;
-                        uint32_t next_object_color = do_the_intersection_thing_again_re_check(rayOrigin_on_mirror, rayDirection_from_mirror, distances, reflections_distances, relevant_re_reflection_shape_index,relevant_reflection_shape_index, shapes_input, pixel_value, shortest_distance, prev_relevant_shape_index, prev_prev_relevant_shape_index);
+                        uint32_t next_object_color = do_the_intersection_thing_again_re_check(rayOrigin_on_mirror, rayDirection_from_mirror, distances, reflections_distances, relevant_re_reflection_shape_index,relevant_reflection_shape_index, shapes_input, pixel_value, shortest_distance, prev_relevant_shape_index);
                         pixel_value = next_object_color;
                         iterations++;
                     
@@ -1415,7 +1481,7 @@ uint32_t PerPixel(glm::vec2 coord, glm::vec3 rayDirection, std::vector<Shape_cus
 
 
 
-
+    distances = original_distances;
     return pixel_value;
 }
 
@@ -1535,17 +1601,17 @@ Texture::Texture(int width, int height) //added by me
     light_sources_colors.push_back(glm::vec4(0.8,0.5,0.7,1.0)); //spot light color
     spotlight_positions.push_back(glm::vec4(-0.2,0.0,0.0,0.7)); //do note that the 4th parameter is probably the cutoff angle: 0.6 * 255deg
 
-    light_sources_original.push_back(glm::vec4(0.3,0.5,-1.0,0.0)); //directional light
-    light_sources_colors.push_back(glm::vec4(0.7,0.8,0.3,1.0)); //directional light color
+    //light_sources_original.push_back(glm::vec4(0.3,0.5,-1.0,0.0)); //directional light
+    //light_sources_colors.push_back(glm::vec4(0.7,0.8,0.3,1.0)); //directional light color
 
-    //shapes.push_back(plane_1);
-    //shapes_reflecting_statuses.push_back(plane_1->get_reflecting_status());
-    //shapes.push_back(plane_2);
-    //shapes_reflecting_statuses.push_back(plane_2->get_reflecting_status());
-    //shapes.push_back(plane_3);
-    //shapes_reflecting_statuses.push_back(plane_3->get_reflecting_status());
-    //shapes.push_back(plane_4);
-    //shapes_reflecting_statuses.push_back(plane_4->get_reflecting_status());
+    shapes.push_back(plane_1);
+    shapes_reflecting_statuses.push_back(plane_1->get_reflecting_status());
+    shapes.push_back(plane_2);
+    shapes_reflecting_statuses.push_back(plane_2->get_reflecting_status());
+    shapes.push_back(plane_3);
+    shapes_reflecting_statuses.push_back(plane_3->get_reflecting_status());
+    shapes.push_back(plane_4);
+    shapes_reflecting_statuses.push_back(plane_4->get_reflecting_status());
     shapes.push_back(sphere_1);
     shapes_reflecting_statuses.push_back(sphere_1->get_reflecting_status());
     shapes.push_back(sphere_2);
@@ -1723,24 +1789,24 @@ Texture::Texture(int width, int height) //added by me
 
 
 
-            if(y > 0 && image_data[(x-2) + y * width] == 0 && image_data[x + (y-1) * width] == 0 && image_data[(x - 1) + y * width] == 4278190335 && image_data[x + y * width] == 0)
-            {
-                for (float dist : distances)
-                {
-                    distances.pop_back();
-                }
-                glm::vec2 repeat_coord =
-                {
-                    (float)(x-1) / (float)width , 1.0f - (float)y / (float)height  //do note that I have inverted the y axis
-                };
-                repeat_coord = repeat_coord * 2.0f - 1.0f; //normalizing the coordinates from -1 to 1
-                glm::vec3 rayDirection_repeat_original = glm::vec3(repeat_coord.x, repeat_coord.y, -rayOrigin_original.z);
+            //if(y > 0 && image_data[(x-2) + y * width] == 0 && image_data[x + (y-1) * width] == 0 && image_data[(x - 1) + y * width] == 4278190335 && image_data[x + y * width] == 0)
+            //{
+            //    for (float dist : distances)
+            //    {
+            //        distances.pop_back();
+            //    }
+            //    glm::vec2 repeat_coord =
+            //    {
+            //        (float)(x-1) / (float)width , 1.0f - (float)y / (float)height  //do note that I have inverted the y axis
+            //    };
+            //    repeat_coord = repeat_coord * 2.0f - 1.0f; //normalizing the coordinates from -1 to 1
+            //    glm::vec3 rayDirection_repeat_original = glm::vec3(repeat_coord.x, repeat_coord.y, -rayOrigin_original.z);
 
 
-                uint32_t test_result = PerPixel(repeat_coord, rayDirection_repeat_original, shapes, distances, rayOrigin_original);
-                std::cout << "aaa";
-            
-            }
+            //    uint32_t test_result = PerPixel(repeat_coord, rayDirection_repeat_original, shapes, distances, rayOrigin_original);
+            //    std::cout << "aaa";
+            //
+            //}
 
 
 
@@ -1759,6 +1825,19 @@ Texture::Texture(int width, int height) //added by me
             image_data[x + y * width] = PerPixelShadow(light_sources_original, light_sources_colors, image_data, original_object_color, rayOrigin_original, rayDirection_original, distances, shapes, image_data[x + y * width], spotlight_positions, ambientLight_original);
             uint32_t pixel_color_final = image_data[x + y * width];
             glm::vec4 pixel_color_final_vector = convert_uint32_t_to_vec4_rgba(image_data[x + y * width], 0);
+
+            if(pixel_color_final == 4278190335 && original_object_color == 0)
+            {
+                for (float dist : distances)
+                {
+                    distances.pop_back();
+                }
+                image_data[x + y * width] = PerPixel(coord, rayDirection_original, shapes, distances, rayOrigin_original);
+                image_data[x + y * width] = PerPixelShadow(light_sources_original, light_sources_colors, image_data, original_object_color, rayOrigin_original, rayDirection_original, distances, shapes, image_data[x + y * width], spotlight_positions, ambientLight_original);
+
+                std::cout << "penis" << std::endl;
+            }
+
 
             if (pixel_color_after_ambient_vector.x > pixel_color_final_vector.x)
             {

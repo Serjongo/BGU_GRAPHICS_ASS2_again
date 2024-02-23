@@ -1,0 +1,174 @@
+uint32_t PerPixel(glm::vec2 coord, glm::vec3 rayDirection, std::vector<Shape_custom*> shapes_input, std::vector<float> &distances, std::vector<int> &distance_flags,glm::vec3 rayOrigin) //essentially cherno's raytracing vid #3 as linked in the assignment
+{ 
+    //TO_ADD INPUTS:
+    //glm::vec3 eye_position
+
+    //uint8_t r = (uint8_t)(coord.x * 255.0f);
+    //uint8_t g = (uint8_t)(coord.y * 255.0f);
+
+    // a+bt - ray formula. a = ray origin, b = ray direction , t = hit distance
+
+    //------------TEMPORARY VALUES, WILL LIKELY CHANGE------------------
+    
+    uint32_t pixel_value = 0; // this will change as it goes through more processes
+    uint32_t reflected_color_shape = 0; //this will only be relevant in case of a reflection
+
+    //finding all distances
+    for (Shape_custom* shape : shapes_input) 
+    {
+        glm::vec2 intersection = shape->intersection(rayOrigin, rayDirection, pixel_value);
+        distances.push_back(intersection.y);
+        distance_flags.push_back(intersection.x);
+    }
+    //fixing reflection distances
+    for (int i = 0; i < distances.size() ; i++) 
+    {
+        if (distance_flags[i] == -2) 
+        {
+            std::vector<float> reflection_distances;
+            std::vector<int> reflection_distance_flags;
+            glm::vec3 reflection_hitpoint;
+            glm::vec3 reflection_normal;
+            glm::vec3 reflection_direction;
+            int reflection_counter = 1; //we already hit a single mirror
+
+
+            reflection_hitpoint = calculate_hitpoint_from_distance(rayOrigin, rayDirection, distances[i]);
+            reflection_normal = shapes_input[i]->calculate_normal_direction(reflection_hitpoint);
+            reflection_direction = glm::reflect(rayDirection, reflection_normal); //may need to negate the reflection_normal
+            //checking intersection with all other shapes except for myself
+            for (int j = 0; j < shapes_input.size(); j++) 
+            {
+                if (i != j) //dont want to check intersection with myself
+                {
+                    glm::vec2 reflection_intersection = shapes_input[j]->intersection(reflection_hitpoint, reflection_direction, pixel_value);
+                    reflection_distances.push_back(reflection_intersection.y);
+                    reflection_distance_flags.push_back(reflection_intersection.x);
+                }
+                else //we pretend I can't hit myself. MAY BE PROBLEMATIC WITH A BALL BUT WE AIN'T THERE YET
+                {
+                    reflection_distances.push_back(-1);
+                    reflection_distance_flags.push_back(-1);
+                }
+            }
+            //we now pick the shortest distance
+            int shortest_distance = INT_MAX;
+            int shortest_distance_index;
+            for (int j_2 = 0; j_2 < reflection_distances.size(); j_2++) 
+            {
+                if (reflection_distances[j_2] < shortest_distance && reflection_distances[j_2] >= 0)
+                {
+                    shortest_distance = reflection_distances[j_2];
+                    shortest_distance_index = j_2;
+                }
+            }
+            if (shortest_distance == INT_MAX) 
+            {
+                distances[i] = -1;
+                distance_flags[i] = -1;
+            }
+            else 
+            {
+                distances[i] = distances[i] + shortest_distance;
+                distance_flags[i] = reflection_distance_flags[shortest_distance_index];
+
+                //THIS IS INCORRECT FOR MULTIPLE REFLECTIONS
+                shapes_input[i]->setColor(shapes_input[shortest_distance_index]->getColor(calculate_hitpoint_from_distance(reflection_hitpoint,reflection_direction,shortest_distance)));
+            }
+        }
+    }
+
+
+    //for (Shape_custom* shape : shapes_input)
+    //{
+    //    glm::vec2 intersection_result = shape->intersection(rayOrigin, rayDirection, pixel_value);
+    //    //if this is not a mirror, carry on
+    //    if (intersection_result.x != -2) 
+    //    {
+    //        distances.push_back(shape->intersection(rayOrigin, rayDirection, pixel_value).x);
+    //        distance_flags.push_back(shape->intersection(rayOrigin, rayDirection, pixel_value).y);
+    //    }
+    //    //this is a mirror
+    //    else 
+    //    {
+    //        int reflection_counter = 1; //we already hit a single mirror
+    //        glm::vec2 reflection_result = glm::vec2(-2, intersection_result.y); //this is our initial value which will be overwritten
+    //        glm::vec3 reflection_hitpoint;
+    //        glm::vec3 reflection_normal;
+    //        glm::vec3 reflection_direction;
+    //        while (reflection_result.x == -2 && reflection_counter < 5) //we only continue while we keep hitting mirrors and less than 5 total reflections
+    //        {
+    //            if (reflection_counter == 1) 
+    //            {
+    //                reflection_hitpoint = calculate_hitpoint_from_distance(rayOrigin, rayDirection, reflection_result.y);
+    //                reflection_normal = shape->calculate_normal_direction(reflection_hitpoint);
+    //                reflection_direction = glm::reflect(rayDirection, reflection_normal); //may need to negate the reflection_normal
+    //            }
+    //            else 
+    //            {
+    //                reflection_hitpoint = calculate_hitpoint_from_distance(reflection_hitpoint, reflection_direction, reflection_result.y);;
+    //                reflection_normal = shape->calculate_normal_direction(reflection_hitpoint);
+    //                reflection_direction = glm::reflect(reflection_direction, reflection_normal);
+    //            }
+
+    //            int hit_registered = 0; //boolean
+    //            std::vector<float> distances_reflected; //keeps the distances of the shapes in the reflection, index will be synced with the original shapes
+    //            for (Shape_custom* shape_reflected : shapes_input) 
+    //            {
+    //                reflection_result = shape_reflected->intersection(reflection_hitpoint, reflection_direction, pixel_value);
+    //                if (reflection_result.x == 0) 
+    //                {
+    //                    //shape->setColor() = shape_reflected->getColor();
+    //                    hit_registered++;
+    //                    reflected_color_shape = shape_reflected->getColor(reflection_hitpoint);
+    //                    break;
+    //                }
+    //                else if (reflection_result.x == -2) 
+    //                {
+    //                    hit_registered++;
+    //                }
+    //            }
+
+    //            if (hit_registered == 0) 
+    //            {
+    //                reflected_color_shape = 0;
+    //                break;
+    //            }
+    //            reflection_counter++;
+    //            //shape->intersection(reflection_hitpoint, reflection_direction, pixel_value);
+    //        }
+    //        distances.push_back(reflection_result.y);
+    //        
+    //    }
+    //    
+    //}
+
+    //for (int j = 0 ; j < distances.size() ; j++) 
+    //{
+    //    if (distances[j] == -2)
+    //    {
+    //        calculate
+    //        shapes_input[j]
+    //    }
+    //}
+
+
+    //now we decide what color we bring back, let's take the smallest distance that is higher than 0, if one exists
+    float shortest_distance = INT_MAX; //arbitrary value, hopefully we don't reach those distances in reality
+    for (int i = 0; i < distances.size() && i < shapes_input.size(); i++) //distances and shapes ought to be synced, but I do this explicitly for readability
+    {
+        //shapes_input[i]->getReflecting() == 0
+        if (distances[i] >= 0 && distances[i] < shortest_distance) //meaning if we're farther than 0 and shorter than our current shortest distance. NOTE: if distances are the same, we will return the color of the object that was added to the stack first
+        {
+            shortest_distance = distances[i];
+            pixel_value = shapes_input[i]->getColor(calculate_hitpoint_from_distance(rayOrigin, rayDirection, shortest_distance)); //the index reverse is because we work in stacks, but calculate chronologically. I might flip it over to sync them properly, but it works so eh, may change later
+        }
+    }
+    if (shortest_distance == INT_MAX) //meaning no intersections whatsoever
+    {
+        pixel_value = 0; //this doesn't do anything for now but eh
+    } 
+
+
+    return pixel_value;
+}
